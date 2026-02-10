@@ -31,8 +31,8 @@ type Ctx = {
 };
 
 const defaultItems: Record<MenuKey, OrderItem> = {
-  mahtai: { key: "mahtai", name: "Махтай", qty: 0 },
-  piroshki: { key: "piroshki", name: "Пирошки", qty: 0 },
+  mahtai: { key: "mahtai", name: "Махтай Пирошки", qty: 0 },
+  piroshki: { key: "piroshki", name: "Төмстэй Пирошки", qty: 0 },
   mantuun_buuz: { key: "mantuun_buuz", name: "Мантуун бууз", qty: 0 },
 };
 
