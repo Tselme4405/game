@@ -7,7 +7,6 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-
 enum Role {
   TEACHER
   STUDENT
@@ -17,9 +16,21 @@ model Person {
   id        String   @id @default(cuid())
   role      Role
   name      String
-  classCode String?  // сурагч дээр 3 оронтой код, багш дээр null байж болно
+  classCode String? // сурагч дээр 3 оронтой код, багш дээр null байж болно
   createdAt DateTime @default(now())
 
   @@index([role])
 }
- 
+
+model Order {
+  id        String  @id @default(cuid())
+  role      Role
+  name      String
+  classCode String?
+
+  mahtaiQty  Int @default(0)
+  tomstoiQty Int @default(0)
+  mantuuQty  Int @default(0)
+
+  createdAt DateTime @default(now())
+}
