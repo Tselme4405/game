@@ -1,12 +1,12 @@
 import { cn } from "@/lib/utils";
-import type { Role } from "@/lib/types";
+import type { EntryRole } from "@/lib/types";
 
 type RoleSelectorProps = {
-  selectedRole: Role | null;
-  onSelect: (role: Role) => void;
+  selectedRole: EntryRole | null;
+  onSelect: (role: EntryRole) => void;
 };
 
-const options: Array<{ role: Role; label: string; desc: string }> = [
+const options: Array<{ role: EntryRole; label: string; desc: string }> = [
   { role: "student", label: "Сурагч", desc: "Захиалга хийх" },
   { role: "teacher", label: "Багш", desc: "Хүргэлт шалгах" },
 ];

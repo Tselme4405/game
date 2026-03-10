@@ -8,11 +8,11 @@ import { PageShell } from "@/components/page-shell";
 import { RoleSelector } from "@/components/role-selector";
 import { ADMIN_STUDENT, DELIVERY_TEACHER } from "@/lib/constants";
 import { setSession } from "@/lib/storage";
-import type { Role } from "@/lib/types";
+import type { EntryRole } from "@/lib/types";
 
 export default function HomePage() {
   const router = useRouter();
-  const [role, setRole] = useState<Role | null>(null);
+  const [role, setRole] = useState<EntryRole | null>(null);
   const [teacherDenied, setTeacherDenied] = useState(false);
 
   async function saveUserToDb(input: {
@@ -37,7 +37,7 @@ export default function HomePage() {
   }
 
   async function handleAuthSubmit(session: {
-    role: Role;
+    role: EntryRole;
     name: string;
     classNumber?: string;
   }) {

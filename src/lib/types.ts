@@ -1,10 +1,11 @@
-export type Role = "student" | "teacher";
-export type SessionRole = Role | "admin";
+export type UserRole = "student" | "teacher" | "admin";
+export type EntryRole = Exclude<UserRole, "admin">;
+export type Role = UserRole;
 
 export type PaymentStatus = "draft" | "pending" | "approved" | "rejected";
 
 export type Session = {
-  role: SessionRole;
+  role: UserRole;
   name: string;
   classNumber?: string;
 };
@@ -31,7 +32,7 @@ export type OrderRecord = {
   id: string;
   userName: string;
   classNumber?: string;
-  role: Role;
+  role: UserRole;
   items: OrderItem[];
   totalCount: number;
   status: PaymentStatus;

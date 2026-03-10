@@ -1,6 +1,6 @@
 import { prisma } from "@/lib/prisma";
-
-export type UserRole = "student" | "teacher" | "admin";
+import type { UserRole } from "@/lib/types";
+export type { UserRole } from "@/lib/types";
 
 type UserRow = {
   id: bigint | number;

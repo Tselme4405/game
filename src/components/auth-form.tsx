@@ -1,16 +1,16 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import type { Role } from "@/lib/types";
+import type { EntryRole } from "@/lib/types";
 
 type SubmitPayload = {
-  role: Role;
+  role: EntryRole;
   name: string;
   classNumber?: string;
 };
 
 type AuthFormProps = {
-  role: Role;
+  role: EntryRole;
   onSubmit: (session: SubmitPayload) => Promise<void>;
 };
 
