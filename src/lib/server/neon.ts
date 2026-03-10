@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import type { UserRole } from "@/lib/types";
 export type { UserRole } from "@/lib/types";
+import type { OrderItem, OrderRecord, PaymentStatus } from "@/lib/types";
 
 type UserRow = {
   id: bigint | number;
@@ -15,6 +16,17 @@ type OrderRow = {
   user_id: bigint | number;
   item_name: string;
   quantity: number;
+  created_at: Date;
+};
+
+type AppOrderRow = {
+  id: string;
+  user_name: string;
+  class_number: string | null;
+  role: UserRole;
+  items: unknown;
+  total_count: number;
+  status: PaymentStatus;
   created_at: Date;
 };
 
@@ -39,6 +51,19 @@ export async function ensureNeonTables() {
       user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
       item_name TEXT NOT NULL,
       quantity INTEGER NOT NULL CHECK (quantity > 0),
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+  `);
+
+  await prisma.$executeRawUnsafe(`
+    CREATE TABLE IF NOT EXISTS app_orders (
+      id TEXT PRIMARY KEY,
+      user_name TEXT NOT NULL,
+      class_number TEXT,
+      role TEXT NOT NULL CHECK (role IN ('student', 'teacher', 'admin')),
+      items JSONB NOT NULL,
+      total_count INTEGER NOT NULL CHECK (total_count >= 0),
+      status TEXT NOT NULL CHECK (status IN ('draft', 'pending', 'approved', 'rejected')),
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
   `);
@@ -89,5 +114,73 @@ export async function insertOrder(input: {
     item_name: row.item_name,
     quantity: row.quantity,
     created_at: row.created_at,
+  };
+}
+
+export async function upsertAppOrder(input: OrderRecord) {
+  await ensureNeonTables();
+
+  const rows = await prisma.$queryRaw<AppOrderRow[]>`
+    INSERT INTO app_orders (id, user_name, class_number, role, items, total_count, status, created_at)
+    VALUES (
+      ${input.id},
+      ${input.userName},
+      ${input.classNumber ?? null},
+      ${input.role},
+      ${JSON.stringify(input.items)}::jsonb,
+      ${input.totalCount},
+      ${input.status},
+      ${new Date(input.createdAt)}
+    )
+    ON CONFLICT (id) DO UPDATE SET
+      user_name = EXCLUDED.user_name,
+      class_number = EXCLUDED.class_number,
+      role = EXCLUDED.role,
+      items = EXCLUDED.items,
+      total_count = EXCLUDED.total_count,
+      status = EXCLUDED.status
+    RETURNING id, user_name, class_number, role, items, total_count, status, created_at
+  `;
+
+  return normalizeAppOrder(rows[0]);
+}
+
+export async function listAppOrders() {
+  await ensureNeonTables();
+
+  const rows = await prisma.$queryRaw<AppOrderRow[]>`
+    SELECT id, user_name, class_number, role, items, total_count, status, created_at
+    FROM app_orders
+    ORDER BY created_at DESC
+  `;
+
+  return rows.map(normalizeAppOrder);
+}
+
+export async function updateAppOrderStatus(orderId: string, status: PaymentStatus) {
+  await ensureNeonTables();
+
+  const rows = await prisma.$queryRaw<AppOrderRow[]>`
+    UPDATE app_orders
+    SET status = ${status}
+    WHERE id = ${orderId}
+    RETURNING id, user_name, class_number, role, items, total_count, status, created_at
+  `;
+
+  return rows[0] ? normalizeAppOrder(rows[0]) : null;
+}
+
+function normalizeAppOrder(row: AppOrderRow): OrderRecord {
+  const items: OrderItem[] = Array.isArray(row.items) ? (row.items as OrderItem[]) : [];
+
+  return {
+    id: row.id,
+    userName: row.user_name,
+    classNumber: row.class_number ?? undefined,
+    role: row.role,
+    items,
+    totalCount: row.total_count,
+    status: row.status,
+    createdAt: row.created_at.toISOString(),
   };
 }

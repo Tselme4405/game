@@ -1,12 +1,12 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { EmptyState } from "@/components/empty-state";
 import { OrderCard } from "@/components/order-card";
 import { PageShell } from "@/components/page-shell";
 import { isAdminSession } from "@/lib/guards";
-import { getOrders, getSession, updateOrderStatus } from "@/lib/storage";
+import { getSession } from "@/lib/storage";
 import { cn } from "@/lib/utils";
 import type { OrderRecord, PaymentStatus } from "@/lib/types";
 
@@ -21,7 +21,8 @@ const tabs: Array<{ key: AdminTab; label: string }> = [
 export default function AdminPage() {
   const router = useRouter();
   const [activeTab, setActiveTab] = useState<AdminTab>("pending");
-  const [orders, setOrders] = useState<OrderRecord[]>(getOrders());
+  const [orders, setOrders] = useState<OrderRecord[]>([]);
+  const [loading, setLoading] = useState(true);
 
   const counts = useMemo(
     () => ({
@@ -37,9 +38,47 @@ export default function AdminPage() {
     [orders, activeTab],
   );
 
-  function handleStatusUpdate(orderId: string, status: "approved" | "rejected") {
-    const nextOrders = updateOrderStatus(orderId, status);
-    setOrders(nextOrders);
+  const fetchOrders = useCallback(async () => {
+    try {
+      const response = await fetch("/api/orders", { cache: "no-store" });
+      if (!response.ok) return;
+
+      const incoming = (await response.json()) as OrderRecord[];
+      const dedupedMap = new Map<string, OrderRecord>();
+      for (const order of incoming) {
+        if (!order?.id) continue;
+        dedupedMap.set(order.id, order);
+      }
+      setOrders(Array.from(dedupedMap.values()));
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void fetchOrders();
+    const intervalId = window.setInterval(() => {
+      void fetchOrders();
+    }, 3000);
+
+    return () => {
+      window.clearInterval(intervalId);
+    };
+  }, [fetchOrders]);
+
+  async function handleStatusUpdate(orderId: string, status: "approved" | "rejected") {
+    const response = await fetch("/api/orders", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: orderId, status }),
+    });
+
+    if (response.ok) {
+      const updated = (await response.json()) as OrderRecord;
+      setOrders((previous) =>
+        previous.map((order) => (order.id === orderId ? updated : order)),
+      );
+    }
   }
 
   if (typeof window === "undefined") {
@@ -86,7 +125,9 @@ export default function AdminPage() {
         </div>
       </div>
 
-      {visibleOrders.length === 0 ? (
+      {loading && orders.length === 0 ? (
+        <EmptyState title="Уншиж байна..." subtitle="Шинэ захиалгуудыг шалгаж байна." />
+      ) : visibleOrders.length === 0 ? (
         <EmptyState title="Хоосон байна" subtitle="Энэ төлөвт захиалга алга." />
       ) : (
         <div className="grid gap-4">

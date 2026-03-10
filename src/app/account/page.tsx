@@ -22,6 +22,7 @@ export default function AccountPage() {
   const [cart] = useState<Cart>(getCart());
   const [submitting, setSubmitting] = useState(false);
   const [copiedField, setCopiedField] = useState<CopyField | null>(null);
+  const [submitError, setSubmitError] = useState("");
 
   if (typeof window === "undefined") {
     return null;
@@ -60,9 +61,10 @@ export default function AccountPage() {
   async function handlePaid() {
     if (!session || selectedItems.length === 0 || submitting) return;
 
+    setSubmitError("");
     setSubmitting(true);
 
-    createOrder({
+    const localOrder = createOrder({
       userName: session.name,
       classNumber: session.classNumber,
       role: session.role,
@@ -71,8 +73,24 @@ export default function AccountPage() {
       status: "pending",
     });
 
-    clearCart();
-    router.push("/waiting");
+    try {
+      const response = await fetch("/api/orders", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(localOrder),
+      });
+
+      if (!response.ok) {
+        const message = await response.text().catch(() => "");
+        throw new Error(message || "Захиалга хадгалж чадсангүй");
+      }
+
+      clearCart();
+      router.push("/waiting");
+    } catch (error) {
+      setSubmitting(false);
+      setSubmitError(error instanceof Error ? error.message : "Алдаа гарлаа");
+    }
   }
 
   async function handleCopy(field: CopyField, value: string) {
@@ -228,6 +246,7 @@ export default function AccountPage() {
         >
           Төлсөн
         </button>
+        {submitError && <p className="mt-3 text-sm text-rose-300">{submitError}</p>}
       </section>
     </PageShell>
   );
