@@ -31,8 +31,8 @@ export default function TeacherPage() {
       }
 
       setDone(true);
-    } catch (e: any) {
-      setErr(e?.message || "Алдаа гарлаа");
+    } catch (e: unknown) {
+      setErr(e instanceof Error ? e.message : "Алдаа гарлаа");
     } finally {
       setLoading(false);
     }

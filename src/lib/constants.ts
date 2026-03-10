@@ -1,0 +1,29 @@
+import type { MenuItem, PaymentStatus } from "@/lib/types";
+
+export const STORAGE_KEYS = {
+  session: "snack_session",
+  cart: "snack_cart",
+  orders: "snack_orders",
+} as const;
+
+export const MENU_ITEMS: MenuItem[] = [
+  { id: "mahtai_piroshki", name: "Махтай пирошки", subtitle: "Сонгоод тоо оруулна" },
+  { id: "tomstoi_piroshki", name: "Төмстэй пирошки", subtitle: "Сонгоод тоо оруулна" },
+  { id: "mantuun_buuz", name: "Мантуун бууз", subtitle: "Сонгоод тоо оруулна" },
+];
+
+export const STATUS_LABELS: Record<PaymentStatus, string> = {
+  draft: "Ноорог",
+  pending: "Хүлээгдэж буй",
+  approved: "Зөвшөөрөгдсөн",
+  rejected: "Үгүйсгэсэн",
+};
+
+export const ADMIN_STUDENT = {
+  name: "BatMunkh",
+  classNumber: "0431",
+} as const;
+
+export const DELIVERY_TEACHER = {
+  name: "HurgeltiinHun",
+} as const;
