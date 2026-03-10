@@ -4,13 +4,17 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { EmptyState } from "@/components/empty-state";
 import { PageShell } from "@/components/page-shell";
-import { SummaryRow } from "@/components/summary-row";
 import { MENU_ITEMS } from "@/lib/constants";
 import { isAdminSession, isNormalStudentSession } from "@/lib/guards";
 import { clearCart, createOrder, getCart, getSession } from "@/lib/storage";
 import type { Cart, Session } from "@/lib/types";
 
 type CopyField = "iban" | "accountNumber" | "accountName";
+const UNIT_PRICE = 3500;
+
+function formatMoney(value: number) {
+  return `${new Intl.NumberFormat("en-US").format(value)}₮`;
+}
 
 export default function AccountPage() {
   const router = useRouter();
@@ -50,6 +54,8 @@ export default function AccountPage() {
       qty: cart.items[item.id] ?? 0,
     }),
   );
+  const totalQuantity = selectedItems.reduce((sum, item) => sum + item.qty, 0);
+  const totalPayment = totalQuantity * UNIT_PRICE;
 
   async function handlePaid() {
     if (!session || selectedItems.length === 0 || submitting) return;
@@ -163,18 +169,55 @@ export default function AccountPage() {
           </div>
           <div className="rounded-xl border border-neutral-800 bg-neutral-950/70 p-4 text-right">
             <p className="text-xs uppercase tracking-wide text-neutral-500">Нийт авсан</p>
-            <p className="mt-1 text-2xl font-bold">{cart.totalCount}</p>
+            <p className="mt-1 text-2xl font-bold">{totalQuantity}</p>
           </div>
         </div>
 
-        <div className="mt-5 space-y-2">
+        <div className="mt-5">
           {selectedItems.length > 0 ? (
-            selectedItems.map((item) => (
-              <SummaryRow key={item.itemId} label={item.name} value={`${item.qty} ш`} />
-            ))
+            <div className="space-y-2">
+              {selectedItems.map((item) => {
+                const lineTotal = item.qty * UNIT_PRICE;
+
+                return (
+                  <div
+                    key={item.itemId}
+                    className="rounded-xl border border-neutral-800 bg-neutral-950/60 px-4 py-3"
+                  >
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <p className="text-sm font-semibold text-neutral-100">{item.name}</p>
+                      <p className="text-sm font-bold text-emerald-300">{formatMoney(lineTotal)}</p>
+                    </div>
+                    <div className="mt-2 grid gap-2 text-xs text-neutral-300 sm:grid-cols-3">
+                      <p>Тоо ширхэг: {item.qty} ш</p>
+                      <p>Нэгж үнэ: {formatMoney(UNIT_PRICE)}</p>
+                      <p className="sm:text-right">Мөрийн дүн: {formatMoney(lineTotal)}</p>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
           ) : (
             <EmptyState title="Хоосон байна" subtitle="Сонгосон зүйл алга." />
           )}
+        </div>
+
+        <div className="mt-5 rounded-xl border border-emerald-800/40 bg-emerald-950/20 p-4">
+          <h3 className="text-sm font-bold text-emerald-200">Төлбөрийн тооцоо</h3>
+          <div className="mt-3 space-y-2">
+            <div className="flex items-center justify-between text-sm text-neutral-200">
+              <span>Нийт авсан</span>
+              <span className="font-semibold">{totalQuantity} ш</span>
+            </div>
+            <div className="flex items-center justify-between text-sm text-neutral-200">
+              <span>Нэгж үнэ</span>
+              <span className="font-semibold">{formatMoney(UNIT_PRICE)}</span>
+            </div>
+            <div className="flex items-center justify-between border-t border-emerald-900/60 pt-2 text-base">
+              <span className="font-semibold text-neutral-100">Нийт төлөх дүн</span>
+              <span className="font-bold text-emerald-300">{formatMoney(totalPayment)}</span>
+            </div>
+          </div>
         </div>
 
         <button
