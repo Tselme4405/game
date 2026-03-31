@@ -32,6 +32,7 @@ export async function POST(req: NextRequest) {
       qrCode: qr.qrCode,
       qrImage: qr.qrImage,
       links: qr.links,
+      expiresIn: 1800, // seconds, matches createBonumQr default
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";

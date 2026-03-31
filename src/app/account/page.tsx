@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { EmptyState } from "@/components/empty-state";
 import { PageShell } from "@/components/page-shell";
 import { MENU_ITEMS } from "@/lib/constants";
@@ -24,6 +24,7 @@ interface BonumQrData {
   invoiceId: string;
   transactionId: string;
   links: BonumLink[];
+  expiresAt: number; // Date.now() + expiresIn * 1000
 }
 
 function formatMoney(value: number) {
@@ -40,6 +41,20 @@ export default function AccountPage() {
   const [qrData, setQrData] = useState<BonumQrData | null>(null);
   const [qrLoading, setQrLoading] = useState(false);
   const [qrError, setQrError] = useState("");
+  const [countdown, setCountdown] = useState(0);
+  const countdownRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  useEffect(() => {
+    if (!qrData) return;
+    const tick = () => {
+      const secs = Math.max(0, Math.round((qrData.expiresAt - Date.now()) / 1000));
+      setCountdown(secs);
+      if (secs === 0 && countdownRef.current) clearInterval(countdownRef.current);
+    };
+    tick();
+    countdownRef.current = setInterval(tick, 1000);
+    return () => { if (countdownRef.current) clearInterval(countdownRef.current); };
+  }, [qrData]);
 
   if (typeof window === "undefined") {
     return null;
@@ -113,6 +128,8 @@ export default function AccountPage() {
   async function handleBonumQr() {
     if (!session || selectedItems.length === 0 || qrLoading) return;
 
+    // Always discard any previous QR so a fresh invoice is shown
+    setQrData(null);
     setQrError("");
     setQrLoading(true);
 
@@ -155,7 +172,13 @@ export default function AccountPage() {
         throw new Error(msg || "Захиалга хадгалж чадсангүй");
       }
 
-      setQrData({ qrImage: qrJson.qrImage, invoiceId: qrJson.invoiceId, transactionId: qrJson.transactionId, links: Array.isArray(qrJson.links) ? qrJson.links : [] });
+      setQrData({
+        qrImage: qrJson.qrImage,
+        invoiceId: qrJson.invoiceId,
+        transactionId: qrJson.transactionId,
+        links: Array.isArray(qrJson.links) ? qrJson.links : [],
+        expiresAt: Date.now() + (qrJson.expiresIn ?? 1800) * 1000,
+      });
       clearCart();
     } catch (err) {
       setQrError(err instanceof Error ? err.message : "Алдаа гарлаа");
@@ -312,7 +335,12 @@ export default function AccountPage() {
         {/* QR shown after handleBonumQr succeeds */}
         {qrData ? (
           <div className="mt-6 flex flex-col items-center gap-4 rounded-2xl border border-emerald-700/40 bg-emerald-950/20 p-5">
-            <p className="text-sm font-semibold text-emerald-200">QR кодоор төлнө үү</p>
+            <div className="flex w-full items-center justify-between">
+              <p className="text-sm font-semibold text-emerald-200">QR кодоор төлнө үү</p>
+              <p className={`text-xs font-mono ${countdown <= 60 ? "text-rose-400" : "text-neutral-400"}`}>
+                {countdown > 0 ? `${Math.floor(countdown / 60)}:${String(countdown % 60).padStart(2, "0")}` : "Хугацаа дууссан"}
+              </p>
+            </div>
             <img
               src={`data:image/png;base64,${qrData.qrImage}`}
               alt="Bonum QR code"
@@ -344,13 +372,24 @@ export default function AccountPage() {
               </div>
             )}
 
-            <button
-              type="button"
-              onClick={() => router.push("/waiting")}
-              className="w-full rounded-xl bg-emerald-600 px-4 py-3 text-sm font-bold text-white transition hover:bg-emerald-500"
-            >
-              Төлсөн — хүлээх хэсэгт орох
-            </button>
+            <div className="flex w-full gap-2">
+              <button
+                type="button"
+                onClick={handleBonumQr}
+                disabled={qrLoading}
+                className="flex-1 rounded-xl border border-neutral-600 px-3 py-2.5 text-sm font-semibold text-neutral-200 transition hover:border-neutral-400 hover:bg-neutral-800 disabled:opacity-50"
+              >
+                {qrLoading ? "..." : "QR шинэчлэх"}
+              </button>
+              <button
+                type="button"
+                onClick={() => router.push("/waiting")}
+                disabled={countdown === 0}
+                className="flex-[2] rounded-xl bg-emerald-600 px-3 py-2.5 text-sm font-bold text-white transition hover:bg-emerald-500 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                Төлсөн — хүлээх хэсэгт орох
+              </button>
+            </div>
           </div>
         ) : (
           <div className="mt-6 flex flex-col gap-3">
