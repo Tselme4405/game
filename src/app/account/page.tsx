@@ -12,6 +12,20 @@ import type { Cart, Session } from "@/lib/types";
 type CopyField = "iban" | "accountNumber" | "accountName";
 const UNIT_PRICE = 3500;
 
+interface BonumLink {
+  name: string;
+  logo?: string;
+  link?: string;
+  deeplink?: string;
+}
+
+interface BonumQrData {
+  qrImage: string;
+  invoiceId: string;
+  transactionId: string;
+  links: BonumLink[];
+}
+
 function formatMoney(value: number) {
   return `${new Intl.NumberFormat("en-US").format(value)}₮`;
 }
@@ -23,6 +37,9 @@ export default function AccountPage() {
   const [submitting, setSubmitting] = useState(false);
   const [copiedField, setCopiedField] = useState<CopyField | null>(null);
   const [submitError, setSubmitError] = useState("");
+  const [qrData, setQrData] = useState<BonumQrData | null>(null);
+  const [qrLoading, setQrLoading] = useState(false);
+  const [qrError, setQrError] = useState("");
 
   if (typeof window === "undefined") {
     return null;
@@ -90,6 +107,60 @@ export default function AccountPage() {
     } catch (error) {
       setSubmitting(false);
       setSubmitError(error instanceof Error ? error.message : "Алдаа гарлаа");
+    }
+  }
+
+  async function handleBonumQr() {
+    if (!session || selectedItems.length === 0 || qrLoading) return;
+
+    setQrError("");
+    setQrLoading(true);
+
+    try {
+      // Get QR first so we have invoiceId before saving the order
+      const qrRes = await fetch("/api/bonum/create-qr", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ amount: totalPayment }),
+      });
+
+      const qrJson = await qrRes.json();
+
+      if (!qrRes.ok || !qrJson.success) {
+        throw new Error(qrJson.error ?? "QR үүсгэхэд алдаа гарлаа");
+      }
+
+      // Save order with Bonum IDs so the webhook can match it later
+      const localOrder = createOrder({
+        userName: session.name,
+        classNumber: session.classNumber,
+        role: session.role,
+        items: selectedItems,
+        totalCount: cart.totalCount,
+        status: "pending",
+      });
+
+      const orderRes = await fetch("/api/orders", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          ...localOrder,
+          bonumInvoiceId: qrJson.invoiceId,
+          bonumTransactionId: qrJson.transactionId,
+        }),
+      });
+
+      if (!orderRes.ok) {
+        const msg = await orderRes.text().catch(() => "");
+        throw new Error(msg || "Захиалга хадгалж чадсангүй");
+      }
+
+      setQrData({ qrImage: qrJson.qrImage, invoiceId: qrJson.invoiceId, transactionId: qrJson.transactionId, links: Array.isArray(qrJson.links) ? qrJson.links : [] });
+      clearCart();
+    } catch (err) {
+      setQrError(err instanceof Error ? err.message : "Алдаа гарлаа");
+    } finally {
+      setQrLoading(false);
     }
   }
 
@@ -238,15 +309,74 @@ export default function AccountPage() {
           </div>
         </div>
 
-        <button
-          type="button"
-          onClick={handlePaid}
-          disabled={submitting || selectedItems.length === 0}
-          className="mt-6 w-full rounded-xl bg-neutral-100 px-4 py-3 text-sm font-bold text-neutral-900 transition hover:bg-white disabled:cursor-not-allowed disabled:opacity-50"
-        >
-          Төлсөн
-        </button>
-        {submitError && <p className="mt-3 text-sm text-rose-300">{submitError}</p>}
+        {/* QR shown after handleBonumQr succeeds */}
+        {qrData ? (
+          <div className="mt-6 flex flex-col items-center gap-4 rounded-2xl border border-emerald-700/40 bg-emerald-950/20 p-5">
+            <p className="text-sm font-semibold text-emerald-200">QR кодоор төлнө үү</p>
+            <img
+              src={`data:image/png;base64,${qrData.qrImage}`}
+              alt="Bonum QR code"
+              width={220}
+              height={220}
+              className="rounded-xl"
+            />
+            <p className="text-xs text-neutral-500">Invoice: {qrData.invoiceId}</p>
+
+            {qrData.links.length > 0 && (
+              <div className="w-full">
+                <p className="mb-2 text-xs text-neutral-400">Аппаараа нээх</p>
+                <div className="grid grid-cols-3 gap-2">
+                  {qrData.links.map((item) => (
+                    <a
+                      key={item.name}
+                      href={item.deeplink ?? item.link ?? "#"}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex flex-col items-center gap-1.5 rounded-xl border border-neutral-700 bg-neutral-900/60 px-2 py-3 text-center transition hover:border-neutral-500 hover:bg-neutral-800"
+                    >
+                      {item.logo && (
+                        <img src={item.logo} alt={item.name} width={32} height={32} className="rounded-md" />
+                      )}
+                      <span className="text-xs text-neutral-200 leading-tight">{item.name}</span>
+                    </a>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            <button
+              type="button"
+              onClick={() => router.push("/waiting")}
+              className="w-full rounded-xl bg-emerald-600 px-4 py-3 text-sm font-bold text-white transition hover:bg-emerald-500"
+            >
+              Төлсөн — хүлээх хэсэгт орох
+            </button>
+          </div>
+        ) : (
+          <div className="mt-6 flex flex-col gap-3">
+            {/* Primary: Bonum QR payment */}
+            <button
+              type="button"
+              onClick={handleBonumQr}
+              disabled={qrLoading || selectedItems.length === 0}
+              className="w-full rounded-xl bg-emerald-600 px-4 py-3 text-sm font-bold text-white transition hover:bg-emerald-500 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {qrLoading ? "QR үүсгэж байна..." : "QR-ээр төлөх"}
+            </button>
+            {qrError && <p className="text-sm text-rose-300">{qrError}</p>}
+
+            {/* Fallback: manual bank transfer confirmation */}
+            <button
+              type="button"
+              onClick={handlePaid}
+              disabled={submitting || selectedItems.length === 0}
+              className="w-full rounded-xl bg-neutral-100 px-4 py-3 text-sm font-bold text-neutral-900 transition hover:bg-white disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {submitting ? "Илгээж байна..." : "Шилжүүлгээр төлсөн"}
+            </button>
+            {submitError && <p className="text-sm text-rose-300">{submitError}</p>}
+          </div>
+        )}
       </section>
     </PageShell>
   );

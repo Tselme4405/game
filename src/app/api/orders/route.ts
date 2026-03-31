@@ -54,6 +54,10 @@ function parseOrderRecord(body: unknown): OrderRecord | null {
     totalCount: candidate.totalCount,
     status: candidate.status,
     createdAt: candidate.createdAt,
+    bonumInvoiceId:
+      typeof candidate.bonumInvoiceId === "string" ? candidate.bonumInvoiceId : undefined,
+    bonumTransactionId:
+      typeof candidate.bonumTransactionId === "string" ? candidate.bonumTransactionId : undefined,
   };
 }
 

@@ -28,6 +28,9 @@ type AppOrderRow = {
   total_count: number;
   status: PaymentStatus;
   created_at: Date;
+  bonum_invoice_id: string | null;
+  bonum_transaction_id: string | null;
+  bonum_paid_at: Date | null;
 };
 
 function normalizeId(id: bigint | number): number {
@@ -67,6 +70,11 @@ export async function ensureNeonTables() {
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
   `);
+
+  // Add Bonum payment columns to existing tables (idempotent)
+  await prisma.$executeRawUnsafe(`ALTER TABLE app_orders ADD COLUMN IF NOT EXISTS bonum_invoice_id TEXT;`);
+  await prisma.$executeRawUnsafe(`ALTER TABLE app_orders ADD COLUMN IF NOT EXISTS bonum_transaction_id TEXT;`);
+  await prisma.$executeRawUnsafe(`ALTER TABLE app_orders ADD COLUMN IF NOT EXISTS bonum_paid_at TIMESTAMPTZ;`);
 }
 
 export async function insertUser(input: {
@@ -121,7 +129,7 @@ export async function upsertAppOrder(input: OrderRecord) {
   await ensureNeonTables();
 
   const rows = await prisma.$queryRaw<AppOrderRow[]>`
-    INSERT INTO app_orders (id, user_name, class_number, role, items, total_count, status, created_at)
+    INSERT INTO app_orders (id, user_name, class_number, role, items, total_count, status, created_at, bonum_invoice_id, bonum_transaction_id)
     VALUES (
       ${input.id},
       ${input.userName},
@@ -130,7 +138,9 @@ export async function upsertAppOrder(input: OrderRecord) {
       ${JSON.stringify(input.items)}::jsonb,
       ${input.totalCount},
       ${input.status},
-      ${new Date(input.createdAt)}
+      ${new Date(input.createdAt)},
+      ${input.bonumInvoiceId ?? null},
+      ${input.bonumTransactionId ?? null}
     )
     ON CONFLICT (id) DO UPDATE SET
       user_name = EXCLUDED.user_name,
@@ -138,8 +148,10 @@ export async function upsertAppOrder(input: OrderRecord) {
       role = EXCLUDED.role,
       items = EXCLUDED.items,
       total_count = EXCLUDED.total_count,
-      status = EXCLUDED.status
-    RETURNING id, user_name, class_number, role, items, total_count, status, created_at
+      status = EXCLUDED.status,
+      bonum_invoice_id = EXCLUDED.bonum_invoice_id,
+      bonum_transaction_id = EXCLUDED.bonum_transaction_id
+    RETURNING id, user_name, class_number, role, items, total_count, status, created_at, bonum_invoice_id, bonum_transaction_id, bonum_paid_at
   `;
 
   return normalizeAppOrder(rows[0]);
@@ -149,7 +161,7 @@ export async function listAppOrders() {
   await ensureNeonTables();
 
   const rows = await prisma.$queryRaw<AppOrderRow[]>`
-    SELECT id, user_name, class_number, role, items, total_count, status, created_at
+    SELECT id, user_name, class_number, role, items, total_count, status, created_at, bonum_invoice_id, bonum_transaction_id, bonum_paid_at
     FROM app_orders
     ORDER BY created_at DESC
   `;
@@ -164,7 +176,33 @@ export async function updateAppOrderStatus(orderId: string, status: PaymentStatu
     UPDATE app_orders
     SET status = ${status}
     WHERE id = ${orderId}
-    RETURNING id, user_name, class_number, role, items, total_count, status, created_at
+    RETURNING id, user_name, class_number, role, items, total_count, status, created_at, bonum_invoice_id, bonum_transaction_id, bonum_paid_at
+  `;
+
+  return rows[0] ? normalizeAppOrder(rows[0]) : null;
+}
+
+export async function findAppOrderByInvoiceId(invoiceId: string) {
+  await ensureNeonTables();
+
+  const rows = await prisma.$queryRaw<AppOrderRow[]>`
+    SELECT id, user_name, class_number, role, items, total_count, status, created_at, bonum_invoice_id, bonum_transaction_id, bonum_paid_at
+    FROM app_orders
+    WHERE bonum_invoice_id = ${invoiceId}
+    LIMIT 1
+  `;
+
+  return rows[0] ? normalizeAppOrder(rows[0]) : null;
+}
+
+export async function markBonumPaid(invoiceId: string) {
+  await ensureNeonTables();
+
+  const rows = await prisma.$queryRaw<AppOrderRow[]>`
+    UPDATE app_orders
+    SET status = 'approved', bonum_paid_at = NOW()
+    WHERE bonum_invoice_id = ${invoiceId}
+    RETURNING id, user_name, class_number, role, items, total_count, status, created_at, bonum_invoice_id, bonum_transaction_id, bonum_paid_at
   `;
 
   return rows[0] ? normalizeAppOrder(rows[0]) : null;
@@ -182,5 +220,8 @@ function normalizeAppOrder(row: AppOrderRow): OrderRecord {
     totalCount: row.total_count,
     status: row.status,
     createdAt: row.created_at.toISOString(),
+    bonumInvoiceId: row.bonum_invoice_id ?? undefined,
+    bonumTransactionId: row.bonum_transaction_id ?? undefined,
+    bonumPaidAt: row.bonum_paid_at?.toISOString() ?? undefined,
   };
 }

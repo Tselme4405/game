@@ -37,4 +37,8 @@ export type OrderRecord = {
   totalCount: number;
   status: PaymentStatus;
   createdAt: string;
+  // Bonum payment tracking (optional — only set when paid via QR)
+  bonumInvoiceId?: string;
+  bonumTransactionId?: string;
+  bonumPaidAt?: string;
 };
