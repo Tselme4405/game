@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getBonumToken, createBonumQr } from "@/lib/bonum";
+import { createBonumQr, getBonumEnvironment, getBonumToken } from "@/lib/bonum";
 
 export async function POST(req: NextRequest) {
   let body: unknown;
@@ -22,17 +22,24 @@ export async function POST(req: NextRequest) {
   const transactionId = `order-${Date.now()}-${crypto.randomUUID()}`;
 
   try {
+    const environment = getBonumEnvironment();
     const token = await getBonumToken();
     const qr = await createBonumQr(token, { amount, transactionId });
+    const expiresIn =
+      typeof qr.expiresIn === "number" && Number.isFinite(qr.expiresIn) && qr.expiresIn > 0
+        ? qr.expiresIn
+        : 1800;
 
     return NextResponse.json({
       success: true,
+      environment,
       transactionId,
       invoiceId: qr.invoiceId,
       qrCode: qr.qrCode,
       qrImage: qr.qrImage,
       links: qr.links,
-      expiresIn: 1800, // seconds, matches createBonumQr default
+      expiresIn,
+      expiresAt: qr.expiresAt ?? null,
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";

@@ -1,6 +1,7 @@
 export type UserRole = "student" | "teacher" | "admin";
 export type EntryRole = Exclude<UserRole, "admin">;
 export type Role = UserRole;
+export type BonumEnvironment = "test" | "production";
 
 export type PaymentStatus = "draft" | "pending" | "approved" | "rejected";
 

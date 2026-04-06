@@ -7,7 +7,7 @@ import { PageShell } from "@/components/page-shell";
 import { MENU_ITEMS } from "@/lib/constants";
 import { isAdminSession, isNormalStudentSession } from "@/lib/guards";
 import { clearCart, createOrder, getCart, getSession } from "@/lib/storage";
-import type { Cart, Session } from "@/lib/types";
+import type { BonumEnvironment, Cart, Session } from "@/lib/types";
 
 type CopyField = "iban" | "accountNumber" | "accountName";
 const UNIT_PRICE = 3500;
@@ -20,11 +20,35 @@ interface BonumLink {
 }
 
 interface BonumQrData {
+  environment: BonumEnvironment;
   qrImage: string;
   invoiceId: string;
   transactionId: string;
   links: BonumLink[];
   expiresAt: number; // Date.now() + expiresIn * 1000
+}
+
+function getBonumLinkHref(link: BonumLink) {
+  return link.deeplink ?? link.link ?? "";
+}
+
+function getActionableBonumLinks(links: BonumLink[]) {
+  return links.filter((link) => getBonumLinkHref(link).length > 0);
+}
+
+function resolveQrExpiry(expiresAt: unknown, expiresIn: unknown) {
+  if (typeof expiresAt === "string") {
+    const parsed = Date.parse(expiresAt);
+    if (Number.isFinite(parsed)) {
+      return parsed;
+    }
+  }
+
+  if (typeof expiresIn === "number" && Number.isFinite(expiresIn) && expiresIn > 0) {
+    return Date.now() + expiresIn * 1000;
+  }
+
+  return Date.now() + 1800 * 1000;
 }
 
 function formatMoney(value: number) {
@@ -43,6 +67,7 @@ export default function AccountPage() {
   const [qrError, setQrError] = useState("");
   const [countdown, setCountdown] = useState(0);
   const countdownRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const qrRequestRef = useRef(0);
 
   useEffect(() => {
     if (!qrData) return;
@@ -89,6 +114,8 @@ export default function AccountPage() {
   );
   const totalQuantity = selectedItems.reduce((sum, item) => sum + item.qty, 0);
   const totalPayment = totalQuantity * UNIT_PRICE;
+  const actionableLinks = qrData ? getActionableBonumLinks(qrData.links) : [];
+  const isTestMode = qrData?.environment === "test";
 
   async function handlePaid() {
     if (!session || selectedItems.length === 0 || submitting) return;
@@ -127,6 +154,8 @@ export default function AccountPage() {
 
   async function handleBonumQr() {
     if (!session || selectedItems.length === 0 || qrLoading) return;
+    const requestId = qrRequestRef.current + 1;
+    qrRequestRef.current = requestId;
 
     // Always discard any previous QR so a fresh invoice is shown
     setQrData(null);
@@ -137,6 +166,7 @@ export default function AccountPage() {
       // Get QR first so we have invoiceId before saving the order
       const qrRes = await fetch("/api/bonum/create-qr", {
         method: "POST",
+        cache: "no-store",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ amount: totalPayment }),
       });
@@ -145,6 +175,21 @@ export default function AccountPage() {
 
       if (!qrRes.ok || !qrJson.success) {
         throw new Error(qrJson.error ?? "QR үүсгэхэд алдаа гарлаа");
+      }
+
+      if (requestId !== qrRequestRef.current) {
+        return;
+      }
+
+      const environment: BonumEnvironment =
+        qrJson.environment === "production" ? "production" : "test";
+      const links = Array.isArray(qrJson.links) ? (qrJson.links as BonumLink[]) : [];
+      const actionableQrLinks = getActionableBonumLinks(links);
+
+      if (environment === "test" && actionableQrLinks.length === 0) {
+        throw new Error(
+          "Test QR generated, but no supported app links returned. Энэ нь Bonum test terminal тохиргоо дутуу байгааг илтгэж магадгүй."
+        );
       }
 
       // Save order with Bonum IDs so the webhook can match it later
@@ -173,17 +218,22 @@ export default function AccountPage() {
       }
 
       setQrData({
+        environment,
         qrImage: qrJson.qrImage,
         invoiceId: qrJson.invoiceId,
         transactionId: qrJson.transactionId,
-        links: Array.isArray(qrJson.links) ? qrJson.links : [],
-        expiresAt: Date.now() + (qrJson.expiresIn ?? 1800) * 1000,
+        links,
+        expiresAt: resolveQrExpiry(qrJson.expiresAt, qrJson.expiresIn),
       });
       clearCart();
     } catch (err) {
-      setQrError(err instanceof Error ? err.message : "Алдаа гарлаа");
+      if (requestId === qrRequestRef.current) {
+        setQrError(err instanceof Error ? err.message : "Алдаа гарлаа");
+      }
     } finally {
-      setQrLoading(false);
+      if (requestId === qrRequestRef.current) {
+        setQrLoading(false);
+      }
     }
   }
 
@@ -336,41 +386,73 @@ export default function AccountPage() {
         {qrData ? (
           <div className="mt-6 flex flex-col items-center gap-4 rounded-2xl border border-emerald-700/40 bg-emerald-950/20 p-5">
             <div className="flex w-full items-center justify-between">
-              <p className="text-sm font-semibold text-emerald-200">QR кодоор төлнө үү</p>
+              <p className="text-sm font-semibold text-emerald-200">
+                {isTestMode ? "Test горимын төлбөр" : "QR кодоор төлнө үү"}
+              </p>
               <p className={`text-xs font-mono ${countdown <= 60 ? "text-rose-400" : "text-neutral-400"}`}>
                 {countdown > 0 ? `${Math.floor(countdown / 60)}:${String(countdown % 60).padStart(2, "0")}` : "Хугацаа дууссан"}
               </p>
             </div>
-            <img
-              src={`data:image/png;base64,${qrData.qrImage}`}
-              alt="Bonum QR code"
-              width={220}
-              height={220}
-              className="rounded-xl"
-            />
-            <p className="text-xs text-neutral-500">Invoice: {qrData.invoiceId}</p>
 
-            {qrData.links.length > 0 && (
+            {isTestMode && (
+              <div className="w-full rounded-2xl border border-amber-500/30 bg-amber-500/10 p-4 text-left">
+                <div className="flex items-center justify-between gap-3">
+                  <p className="text-sm font-bold uppercase tracking-[0.2em] text-amber-200">Test Mode</p>
+                  <span className="rounded-full border border-amber-400/30 px-2 py-1 text-[10px] font-semibold text-amber-100">
+                    SANDBOX
+                  </span>
+                </div>
+                <p className="mt-2 text-sm leading-6 text-amber-100">
+                  Энэ QR нь test орчных тул банкны аппын камераар шууд уншуулахгүй. Доорх Bonum-аас
+                  буцаасан аппын товчоор нээгээд шалгана уу.
+                </p>
+              </div>
+            )}
+
+            {actionableLinks.length > 0 && (
               <div className="w-full">
-                <p className="mb-2 text-xs text-neutral-400">Аппаараа нээх</p>
-                <div className="grid grid-cols-3 gap-2">
-                  {qrData.links.map((item) => (
+                <p className="mb-2 text-xs text-neutral-400">
+                  {isTestMode ? "Төлбөрийн апп руу шууд нээх" : "Аппаараа нээх"}
+                </p>
+                <div className={`grid gap-2 ${isTestMode ? "grid-cols-2" : "grid-cols-3"}`}>
+                  {actionableLinks.map((item) => (
                     <a
                       key={item.name}
-                      href={item.deeplink ?? item.link ?? "#"}
+                      href={getBonumLinkHref(item)}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="flex flex-col items-center gap-1.5 rounded-xl border border-neutral-700 bg-neutral-900/60 px-2 py-3 text-center transition hover:border-neutral-500 hover:bg-neutral-800"
+                      className={`flex flex-col items-center gap-1.5 rounded-xl px-2 py-3 text-center transition ${
+                        isTestMode
+                          ? "border border-amber-500/30 bg-amber-500/10 hover:border-amber-300/60 hover:bg-amber-500/20"
+                          : "border border-neutral-700 bg-neutral-900/60 hover:border-neutral-500 hover:bg-neutral-800"
+                      }`}
                     >
                       {item.logo && (
                         <img src={item.logo} alt={item.name} width={32} height={32} className="rounded-md" />
                       )}
-                      <span className="text-xs text-neutral-200 leading-tight">{item.name}</span>
+                      <span className="text-xs leading-tight text-neutral-200">{item.name}</span>
                     </a>
                   ))}
                 </div>
               </div>
             )}
+
+            <div className="flex w-full flex-col items-center gap-3 rounded-2xl border border-neutral-800 bg-neutral-950/50 p-4">
+              <p className="text-xs text-neutral-400">
+                {isTestMode
+                  ? "Лавлах зорилгоор харуулж байна. Test mode дээр scanner-ээр бүү уншуул."
+                  : "QR кодоор төлөх"}
+              </p>
+              <img
+                key={qrData.invoiceId}
+                src={`data:image/png;base64,${qrData.qrImage}`}
+                alt="Bonum QR code"
+                width={220}
+                height={220}
+                className="rounded-xl"
+              />
+              <p className="text-xs text-neutral-500">Invoice: {qrData.invoiceId}</p>
+            </div>
 
             <div className="flex w-full gap-2">
               <button

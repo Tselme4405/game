@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import type { BonumEnvironment } from "@/lib/types";
 
 interface BonumLink {
   name: string;
@@ -10,6 +11,7 @@ interface BonumLink {
 }
 
 interface QrData {
+  environment: BonumEnvironment;
   transactionId: string;
   invoiceId: string;
   qrCode: string;
@@ -22,10 +24,20 @@ interface Props {
   amount?: number;
 }
 
+function getBonumLinkHref(link: BonumLink) {
+  return link.deeplink ?? link.link ?? "";
+}
+
+function getActionableBonumLinks(links: BonumLink[]) {
+  return links.filter((link) => getBonumLinkHref(link).length > 0);
+}
+
 export default function BonumPayButton({ amount = 1000 }: Props) {
   const [loading, setLoading] = useState(false);
   const [qrData, setQrData] = useState<QrData | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const actionableLinks = qrData ? getActionableBonumLinks(qrData.links) : [];
+  const isTestMode = qrData?.environment === "test";
 
   async function handlePay() {
     setLoading(true);
@@ -35,6 +47,7 @@ export default function BonumPayButton({ amount = 1000 }: Props) {
     try {
       const res = await fetch("/api/bonum/create-qr", {
         method: "POST",
+        cache: "no-store",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ amount }),
       });
@@ -45,9 +58,21 @@ export default function BonumPayButton({ amount = 1000 }: Props) {
         throw new Error(data.error ?? "QR үүсгэхэд алдаа гарлаа");
       }
 
+      const environment: BonumEnvironment =
+        data.environment === "production" ? "production" : "test";
+      const links = Array.isArray(data.links) ? (data.links as BonumLink[]) : [];
+      const actionableQrLinks = getActionableBonumLinks(links);
+
+      if (environment === "test" && actionableQrLinks.length === 0) {
+        throw new Error(
+          "Test QR generated, but no supported app links returned. Энэ нь Bonum test terminal тохиргоо дутуу байгааг илтгэж магадгүй."
+        );
+      }
+
       setQrData({
         ...data,
-        links: Array.isArray(data.links) ? data.links : [],
+        environment,
+        links,
       });
     } catch (err) {
       setError(err instanceof Error ? err.message : "Алдаа гарлаа");
@@ -74,29 +99,37 @@ export default function BonumPayButton({ amount = 1000 }: Props) {
 
       {qrData && (
         <div className="flex flex-col items-center gap-3 p-4 border rounded-2xl shadow-sm">
-          <p className="text-sm text-gray-500">QR кодоор төлөх</p>
+          <p className="text-sm text-gray-500">
+            {isTestMode ? "Test горимын төлбөр" : "QR кодоор төлөх"}
+          </p>
 
-          <img
-            src={`data:image/png;base64,${qrData.qrImage}`}
-            alt="Bonum QR code"
-            width={220}
-            height={220}
-            className="rounded-lg"
-          />
+          {isTestMode && (
+            <div className="w-full rounded-2xl border border-amber-300 bg-amber-50 p-4 text-left">
+              <p className="text-xs font-bold uppercase tracking-[0.2em] text-amber-700">Test Mode</p>
+              <p className="mt-2 text-sm text-amber-900">
+                Энэ QR нь test орчных тул банкны аппын камераар уншуулахгүй. Доорх аппын товчоор
+                нээгээд шалгана уу.
+              </p>
+            </div>
+          )}
 
-          <p className="text-xs text-gray-400">Invoice: {qrData.invoiceId}</p>
-
-          {qrData.links.length > 0 && (
+          {actionableLinks.length > 0 && (
             <div className="w-full">
-              <p className="mb-2 text-xs text-gray-400 text-center">Аппаараа нээх</p>
-              <div className="grid grid-cols-3 gap-2">
-                {qrData.links.map((item) => (
+              <p className="mb-2 text-xs text-gray-400 text-center">
+                {isTestMode ? "Төлбөрийн апп руу шууд нээх" : "Аппаараа нээх"}
+              </p>
+              <div className={`grid gap-2 ${isTestMode ? "grid-cols-2" : "grid-cols-3"}`}>
+                {actionableLinks.map((item) => (
                   <a
                     key={item.name}
-                    href={item.deeplink ?? item.link ?? "#"}
+                    href={getBonumLinkHref(item)}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="flex flex-col items-center gap-1.5 rounded-xl border border-gray-200 px-2 py-3 text-center hover:bg-gray-50 transition"
+                    className={`flex flex-col items-center gap-1.5 rounded-xl px-2 py-3 text-center transition ${
+                      isTestMode
+                        ? "border border-amber-300 bg-amber-50 hover:bg-amber-100"
+                        : "border border-gray-200 hover:bg-gray-50"
+                    }`}
                   >
                     {item.logo && (
                       <img src={item.logo} alt={item.name} width={32} height={32} className="rounded-md" />
@@ -107,6 +140,25 @@ export default function BonumPayButton({ amount = 1000 }: Props) {
               </div>
             </div>
           )}
+
+          <div className="flex w-full flex-col items-center gap-3 rounded-2xl border border-gray-200 bg-white/80 p-4">
+            <p className="text-xs text-gray-400">
+              {isTestMode
+                ? "Лавлах зорилгоор харуулж байна. Test mode дээр scanner-ээр бүү уншуул."
+                : "QR код"}
+            </p>
+
+            <img
+              key={qrData.invoiceId}
+              src={`data:image/png;base64,${qrData.qrImage}`}
+              alt="Bonum QR code"
+              width={220}
+              height={220}
+              className="rounded-lg"
+            />
+
+            <p className="text-xs text-gray-400">Invoice: {qrData.invoiceId}</p>
+          </div>
 
           <button
             onClick={() => { setQrData(null); setError(null); }}
