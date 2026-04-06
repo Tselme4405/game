@@ -1,6 +1,21 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createBonumQr, getBonumEnvironment, getBonumToken } from "@/lib/bonum";
 
+function isLocalHost(host: string | null) {
+  if (!host) return false;
+
+  const normalized = host.toLowerCase();
+
+  return (
+    normalized.startsWith("localhost:") ||
+    normalized === "localhost" ||
+    normalized.startsWith("127.0.0.1:") ||
+    normalized === "127.0.0.1" ||
+    normalized.startsWith("[::1]:") ||
+    normalized === "[::1]"
+  );
+}
+
 export async function POST(req: NextRequest) {
   let body: unknown;
   try {
@@ -23,6 +38,18 @@ export async function POST(req: NextRequest) {
 
   try {
     const environment = getBonumEnvironment();
+
+    if (environment === "test" && !isLocalHost(req.headers.get("host"))) {
+      return NextResponse.json(
+        {
+          environment,
+          error:
+            "Bonum sandbox credential ashiglagdaj baina. Public site deer live bank app esvel QR unshuulj tuluh bolomjgui. Production App Secret, Terminal ID, BONUM_BASE_URL=https://apis.bonum.mn heregtei.",
+        },
+        { status: 409 }
+      );
+    }
+
     const token = await getBonumToken();
     const qr = await createBonumQr(token, { amount, transactionId });
     const expiresIn =

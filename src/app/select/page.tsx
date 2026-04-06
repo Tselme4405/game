@@ -9,6 +9,10 @@ import { isAdminSession, isNormalStudentSession } from "@/lib/guards";
 import { getCart, getSession, setCart } from "@/lib/storage";
 import type { Cart } from "@/lib/types";
 
+function formatMoney(value: number) {
+  return `${new Intl.NumberFormat("en-US").format(value)}₮`;
+}
+
 export default function SelectPage() {
   const router = useRouter();
   const [cart, setCartState] = useState<Cart>(getCart());
@@ -80,7 +84,7 @@ export default function SelectPage() {
           <FoodCard
             key={item.id}
             title={item.name}
-            subtitle={item.subtitle}
+            subtitle={`${item.subtitle} • ${formatMoney(item.price)}`}
             qty={cart.items[item.id] ?? 0}
             onQtyChange={(qty) => updateQty(item.id, qty)}
           />

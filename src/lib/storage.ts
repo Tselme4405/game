@@ -107,9 +107,36 @@ export function getOrders(): OrderRecord[] {
   return data.filter((order) => order?.id && order?.status && order?.userName);
 }
 
+export function getOrderById(orderId: string) {
+  return getOrders().find((order) => order.id === orderId) ?? null;
+}
+
 export function setOrders(orders: OrderRecord[]) {
   if (!isBrowser()) return;
   window.localStorage.setItem(STORAGE_KEYS.orders, JSON.stringify(orders));
+}
+
+export function upsertOrder(order: OrderRecord) {
+  const orders = getOrders();
+  const nextOrders = orders.filter((item) => item.id !== order.id);
+  nextOrders.unshift(order);
+  setOrders(nextOrders);
+  return order;
+}
+
+export function getActiveOrderId() {
+  if (!isBrowser()) return null;
+  return window.localStorage.getItem(STORAGE_KEYS.activeOrderId);
+}
+
+export function setActiveOrderId(orderId: string) {
+  if (!isBrowser()) return;
+  window.localStorage.setItem(STORAGE_KEYS.activeOrderId, orderId);
+}
+
+export function clearActiveOrderId() {
+  if (!isBrowser()) return;
+  window.localStorage.removeItem(STORAGE_KEYS.activeOrderId);
 }
 
 export function createOrder(payload: Omit<OrderRecord, "id" | "createdAt">) {

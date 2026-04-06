@@ -15,6 +15,7 @@ export type MenuItem = {
   id: string;
   name: string;
   subtitle: string;
+  price: number;
 };
 
 export type Cart = {

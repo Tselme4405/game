@@ -6,11 +6,10 @@ import { EmptyState } from "@/components/empty-state";
 import { PageShell } from "@/components/page-shell";
 import { MENU_ITEMS } from "@/lib/constants";
 import { isAdminSession, isNormalStudentSession } from "@/lib/guards";
-import { clearCart, createOrder, getCart, getSession } from "@/lib/storage";
-import type { BonumEnvironment, Cart, Session } from "@/lib/types";
+import { clearActiveOrderId, clearCart, createOrder, getCart, getSession, setActiveOrderId, upsertOrder } from "@/lib/storage";
+import type { BonumEnvironment, Cart, OrderRecord, PaymentStatus, Session } from "@/lib/types";
 
 type CopyField = "iban" | "accountNumber" | "accountName";
-const UNIT_PRICE = 3500;
 
 interface BonumLink {
   name: string;
@@ -21,6 +20,8 @@ interface BonumLink {
 
 interface BonumQrData {
   environment: BonumEnvironment;
+  orderId: string;
+  status: PaymentStatus;
   qrImage: string;
   invoiceId: string;
   transactionId: string;
@@ -55,6 +56,29 @@ function formatMoney(value: number) {
   return `${new Intl.NumberFormat("en-US").format(value)}₮`;
 }
 
+function getPaymentStatusCopy(status: PaymentStatus) {
+  switch (status) {
+    case "approved":
+      return {
+        title: "Төлсөнд баярлалаа",
+        subtitle: "Таны төлбөр амжилттай баталгаажлаа.",
+        tone: "border-emerald-700/40 bg-emerald-950/30 text-emerald-100",
+      };
+    case "rejected":
+      return {
+        title: "Төлбөр амжилтгүй боллоо",
+        subtitle: "Гүйлгээ төлөгдөөгүй эсвэл цуцлагдсан байна.",
+        tone: "border-rose-700/40 bg-rose-950/30 text-rose-100",
+      };
+    default:
+      return {
+        title: "Төлбөрийг автоматаар шалгаж байна",
+        subtitle: "Гүйлгээ ормогц энэ хэсэг шууд шинэчлэгдэнэ.",
+        tone: "border-emerald-700/40 bg-emerald-950/20 text-emerald-100",
+      };
+  }
+}
+
 export default function AccountPage() {
   const router = useRouter();
   const [session] = useState<Session | null>(getSession());
@@ -68,6 +92,8 @@ export default function AccountPage() {
   const [countdown, setCountdown] = useState(0);
   const countdownRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const qrRequestRef = useRef(0);
+  const qrOrderId = qrData?.orderId ?? null;
+  const qrPaymentStatus = qrData?.status ?? null;
 
   useEffect(() => {
     if (!qrData) return;
@@ -80,6 +106,60 @@ export default function AccountPage() {
     countdownRef.current = setInterval(tick, 1000);
     return () => { if (countdownRef.current) clearInterval(countdownRef.current); };
   }, [qrData]);
+
+  useEffect(() => {
+    if (!qrOrderId || qrPaymentStatus !== "pending") return;
+
+    let cancelled = false;
+    let intervalId: number | null = null;
+
+    const syncPaymentStatus = async () => {
+      try {
+        const response = await fetch(`/api/orders/${qrOrderId}`, {
+          cache: "no-store",
+        });
+
+        if (!response.ok) {
+          return;
+        }
+
+        const latestOrder = (await response.json()) as OrderRecord;
+
+        if (cancelled) return;
+
+        upsertOrder(latestOrder);
+        setActiveOrderId(latestOrder.id);
+        setQrData((current) => {
+          if (!current || current.orderId !== latestOrder.id) {
+            return current;
+          }
+
+          return {
+            ...current,
+            status: latestOrder.status,
+          };
+        });
+
+        if ((latestOrder.status === "approved" || latestOrder.status === "rejected") && intervalId) {
+          window.clearInterval(intervalId);
+        }
+      } catch {
+        // Keep polling; intermittent network failures should not interrupt payment status updates.
+      }
+    };
+
+    void syncPaymentStatus();
+    intervalId = window.setInterval(() => {
+      void syncPaymentStatus();
+    }, 3000);
+
+    return () => {
+      cancelled = true;
+      if (intervalId) {
+        window.clearInterval(intervalId);
+      }
+    };
+  }, [qrOrderId, qrPaymentStatus]);
 
   if (typeof window === "undefined") {
     return null;
@@ -110,12 +190,15 @@ export default function AccountPage() {
       itemId: item.id,
       name: item.name,
       qty: cart.items[item.id] ?? 0,
+      price: item.price,
     }),
   );
   const totalQuantity = selectedItems.reduce((sum, item) => sum + item.qty, 0);
-  const totalPayment = totalQuantity * UNIT_PRICE;
+  const totalPayment = selectedItems.reduce((sum, item) => sum + item.qty * item.price, 0);
   const actionableLinks = qrData ? getActionableBonumLinks(qrData.links) : [];
   const isTestMode = qrData?.environment === "test";
+  const showPaymentAppLinks = actionableLinks.length > 0 && !isTestMode;
+  const paymentStatusCopy = getPaymentStatusCopy(qrData?.status ?? "pending");
 
   async function handlePaid() {
     if (!session || selectedItems.length === 0 || submitting) return;
@@ -144,6 +227,7 @@ export default function AccountPage() {
         throw new Error(message || "Захиалга хадгалж чадсангүй");
       }
 
+      setActiveOrderId(localOrder.id);
       clearCart();
       router.push("/waiting");
     } catch (error) {
@@ -217,14 +301,19 @@ export default function AccountPage() {
         throw new Error(msg || "Захиалга хадгалж чадсангүй");
       }
 
+      const savedOrder = (await orderRes.json()) as OrderRecord;
+
       setQrData({
         environment,
+        orderId: savedOrder.id,
+        status: savedOrder.status,
         qrImage: qrJson.qrImage,
         invoiceId: qrJson.invoiceId,
         transactionId: qrJson.transactionId,
         links,
         expiresAt: resolveQrExpiry(qrJson.expiresAt, qrJson.expiresIn),
       });
+      setActiveOrderId(savedOrder.id);
       clearCart();
     } catch (err) {
       if (requestId === qrRequestRef.current) {
@@ -339,7 +428,7 @@ export default function AccountPage() {
           {selectedItems.length > 0 ? (
             <div className="space-y-2">
               {selectedItems.map((item) => {
-                const lineTotal = item.qty * UNIT_PRICE;
+                const lineTotal = item.qty * item.price;
 
                 return (
                   <div
@@ -352,7 +441,7 @@ export default function AccountPage() {
                     </div>
                     <div className="mt-2 grid gap-2 text-xs text-neutral-300 sm:grid-cols-3">
                       <p>Тоо ширхэг: {item.qty} ш</p>
-                      <p>Нэгж үнэ: {formatMoney(UNIT_PRICE)}</p>
+                      <p>Нэгж үнэ: {formatMoney(item.price)}</p>
                       <p className="sm:text-right">Мөрийн дүн: {formatMoney(lineTotal)}</p>
                     </div>
                   </div>
@@ -371,10 +460,6 @@ export default function AccountPage() {
               <span>Нийт авсан</span>
               <span className="font-semibold">{totalQuantity} ш</span>
             </div>
-            <div className="flex items-center justify-between text-sm text-neutral-200">
-              <span>Нэгж үнэ</span>
-              <span className="font-semibold">{formatMoney(UNIT_PRICE)}</span>
-            </div>
             <div className="flex items-center justify-between border-t border-emerald-900/60 pt-2 text-base">
               <span className="font-semibold text-neutral-100">Нийт төлөх дүн</span>
               <span className="font-bold text-emerald-300">{formatMoney(totalPayment)}</span>
@@ -384,14 +469,19 @@ export default function AccountPage() {
 
         {/* QR shown after handleBonumQr succeeds */}
         {qrData ? (
-          <div className="mt-6 flex flex-col items-center gap-4 rounded-2xl border border-emerald-700/40 bg-emerald-950/20 p-5">
+          <div className={`mt-6 flex flex-col items-center gap-4 rounded-2xl border p-5 ${paymentStatusCopy.tone}`}>
             <div className="flex w-full items-center justify-between">
-              <p className="text-sm font-semibold text-emerald-200">
-                {isTestMode ? "Test горимын төлбөр" : "QR кодоор төлнө үү"}
-              </p>
-              <p className={`text-xs font-mono ${countdown <= 60 ? "text-rose-400" : "text-neutral-400"}`}>
-                {countdown > 0 ? `${Math.floor(countdown / 60)}:${String(countdown % 60).padStart(2, "0")}` : "Хугацаа дууссан"}
-              </p>
+              <div>
+                <p className="text-sm font-semibold text-emerald-200">
+                  {isTestMode ? "Test горимын төлбөр" : paymentStatusCopy.title}
+                </p>
+                <p className="mt-1 text-xs text-neutral-300">{paymentStatusCopy.subtitle}</p>
+              </div>
+              {qrData.status === "pending" && (
+                <p className={`text-xs font-mono ${countdown <= 60 ? "text-rose-400" : "text-neutral-400"}`}>
+                  {countdown > 0 ? `${Math.floor(countdown / 60)}:${String(countdown % 60).padStart(2, "0")}` : "Хугацаа дууссан"}
+                </p>
+              )}
             </div>
 
             {isTestMode && (
@@ -403,29 +493,34 @@ export default function AccountPage() {
                   </span>
                 </div>
                 <p className="mt-2 text-sm leading-6 text-amber-100">
-                  Энэ QR нь test орчных тул банкны аппын камераар шууд уншуулахгүй. Доорх Bonum-аас
-                  буцаасан аппын товчоор нээгээд шалгана уу.
+                  Энэ QR нь sandbox invoice тул банкны live app, QR scanner, эсвэл deeplink-р
+                  төлөхөд хүчингүй гэж гарна. Жинхэнэ төлбөр ажиллуулахын тулд Bonum-ийн production
+                  credential хэрэгтэй.
                 </p>
               </div>
             )}
 
-            {actionableLinks.length > 0 && (
-              <div className="w-full">
-                <p className="mb-2 text-xs text-neutral-400">
-                  {isTestMode ? "Төлбөрийн апп руу шууд нээх" : "Аппаараа нээх"}
+            {qrData.status === "approved" ? (
+              <div className="w-full rounded-2xl border border-emerald-500/30 bg-emerald-500/10 p-5 text-center">
+                <p className="text-5xl font-black text-emerald-300">OK</p>
+                <p className="mt-3 text-lg font-bold text-emerald-100">Төлбөр баталгаажлаа</p>
+                <p className="mt-2 text-sm text-emerald-50/90">
+                  Захиалга тань амжилттай бүртгэгдлээ. Хамт байсанд баярлалаа.
                 </p>
-                <div className={`grid gap-2 ${isTestMode ? "grid-cols-2" : "grid-cols-3"}`}>
+              </div>
+            ) : null}
+
+            {showPaymentAppLinks && qrData.status === "pending" && (
+              <div className="w-full">
+                <p className="mb-2 text-xs text-neutral-400">Аппаараа нээх</p>
+                <div className="grid grid-cols-3 gap-2">
                   {actionableLinks.map((item) => (
                     <a
                       key={item.name}
                       href={getBonumLinkHref(item)}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className={`flex flex-col items-center gap-1.5 rounded-xl px-2 py-3 text-center transition ${
-                        isTestMode
-                          ? "border border-amber-500/30 bg-amber-500/10 hover:border-amber-300/60 hover:bg-amber-500/20"
-                          : "border border-neutral-700 bg-neutral-900/60 hover:border-neutral-500 hover:bg-neutral-800"
-                      }`}
+                      className="flex flex-col items-center gap-1.5 rounded-xl border border-neutral-700 bg-neutral-900/60 px-2 py-3 text-center transition hover:border-neutral-500 hover:bg-neutral-800"
                     >
                       {item.logo && (
                         <img src={item.logo} alt={item.name} width={32} height={32} className="rounded-md" />
@@ -437,40 +532,67 @@ export default function AccountPage() {
               </div>
             )}
 
-            <div className="flex w-full flex-col items-center gap-3 rounded-2xl border border-neutral-800 bg-neutral-950/50 p-4">
-              <p className="text-xs text-neutral-400">
-                {isTestMode
-                  ? "Лавлах зорилгоор харуулж байна. Test mode дээр scanner-ээр бүү уншуул."
-                  : "QR кодоор төлөх"}
-              </p>
-              <img
-                key={qrData.invoiceId}
-                src={`data:image/png;base64,${qrData.qrImage}`}
-                alt="Bonum QR code"
-                width={220}
-                height={220}
-                className="rounded-xl"
-              />
-              <p className="text-xs text-neutral-500">Invoice: {qrData.invoiceId}</p>
-            </div>
+            {qrData.status !== "approved" && (
+              <div className="flex w-full flex-col items-center gap-3 rounded-2xl border border-neutral-800 bg-neutral-950/50 p-4">
+                <p className="text-xs text-neutral-400">
+                  {isTestMode
+                    ? "Лавлах зорилгоор харуулж байна. Test mode дээр scanner-ээр бүү уншуул."
+                    : qrData.status === "pending"
+                      ? "QR уншуулмагц төлөв автоматаар шинэчлэгдэнэ."
+                      : "Энэ invoice төлөгдөөгүй байна."}
+                </p>
+                <img
+                  key={qrData.invoiceId}
+                  src={`data:image/png;base64,${qrData.qrImage}`}
+                  alt="Bonum QR code"
+                  width={220}
+                  height={220}
+                  className="rounded-xl"
+                />
+                <p className="text-xs text-neutral-500">Invoice: {qrData.invoiceId}</p>
+              </div>
+            )}
 
             <div className="flex w-full gap-2">
-              <button
-                type="button"
-                onClick={handleBonumQr}
-                disabled={qrLoading}
-                className="flex-1 rounded-xl border border-neutral-600 px-3 py-2.5 text-sm font-semibold text-neutral-200 transition hover:border-neutral-400 hover:bg-neutral-800 disabled:opacity-50"
-              >
-                {qrLoading ? "..." : "QR шинэчлэх"}
-              </button>
-              <button
-                type="button"
-                onClick={() => router.push("/waiting")}
-                disabled={countdown === 0}
-                className="flex-[2] rounded-xl bg-emerald-600 px-3 py-2.5 text-sm font-bold text-white transition hover:bg-emerald-500 disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                Төлсөн — хүлээх хэсэгт орох
-              </button>
+              {qrData.status === "approved" ? (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => router.push("/waiting")}
+                    className="flex-1 rounded-xl border border-neutral-600 px-3 py-2.5 text-sm font-semibold text-neutral-200 transition hover:border-neutral-400 hover:bg-neutral-800"
+                  >
+                    Төлөвийн хуудас харах
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      clearActiveOrderId();
+                      router.push("/select");
+                    }}
+                    className="flex-[2] rounded-xl bg-emerald-600 px-3 py-2.5 text-sm font-bold text-white transition hover:bg-emerald-500"
+                  >
+                    Шинэ захиалга хийх
+                  </button>
+                </>
+              ) : (
+                <>
+                  <button
+                    type="button"
+                    onClick={handleBonumQr}
+                    disabled={qrLoading}
+                    className="flex-1 rounded-xl border border-neutral-600 px-3 py-2.5 text-sm font-semibold text-neutral-200 transition hover:border-neutral-400 hover:bg-neutral-800 disabled:opacity-50"
+                  >
+                    {qrLoading ? "..." : qrData.status === "rejected" ? "QR дахин үүсгэх" : "QR шинэчлэх"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => router.push("/waiting")}
+                    className="flex-[2] rounded-xl bg-neutral-100 px-3 py-2.5 text-sm font-bold text-neutral-900 transition hover:bg-white"
+                  >
+                    Төлөвийн хуудсыг нээх
+                  </button>
+                </>
+              )}
             </div>
           </div>
         ) : (
@@ -484,7 +606,11 @@ export default function AccountPage() {
             >
               {qrLoading ? "QR үүсгэж байна..." : "QR-ээр төлөх"}
             </button>
-            {qrError && <p className="text-sm text-rose-300">{qrError}</p>}
+            {qrError && (
+              <div className="rounded-xl border border-rose-500/30 bg-rose-500/10 p-3 text-sm text-rose-200">
+                {qrError}
+              </div>
+            )}
 
             {/* Fallback: manual bank transfer confirmation */}
             <button

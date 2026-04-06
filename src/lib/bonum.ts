@@ -12,9 +12,9 @@ const RAW_ENV = process.env.BONUM_ENV?.trim().toLowerCase() ?? "test";
 
 const HOST_ALLOWLIST: Record<BonumEnvironment, readonly string[]> = {
   test: ["testapi.bonum.mn"],
-  // Bonum has not yet confirmed a single production QR host for this integration,
-  // so allow the known public candidates and reject obvious test/prod mismatches.
-  production: ["api.bonum.mn", "psp.bonum.mn"],
+  // Bonum's gateway screenshot lists apis.bonum.mn as the production base URL
+  // for this QR flow.
+  production: ["apis.bonum.mn"],
 };
 
 export interface BonumConfig {
