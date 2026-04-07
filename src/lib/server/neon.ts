@@ -208,6 +208,19 @@ export async function findAppOrderByInvoiceId(invoiceId: string) {
   return rows[0] ? normalizeAppOrder(rows[0]) : null;
 }
 
+export async function findAppOrderByTransactionId(transactionId: string) {
+  await ensureNeonTables();
+
+  const rows = await prisma.$queryRaw<AppOrderRow[]>`
+    SELECT id, user_name, class_number, role, items, total_count, status, created_at, bonum_invoice_id, bonum_transaction_id, bonum_paid_at
+    FROM app_orders
+    WHERE bonum_transaction_id = ${transactionId}
+    LIMIT 1
+  `;
+
+  return rows[0] ? normalizeAppOrder(rows[0]) : null;
+}
+
 export async function markBonumPaid(invoiceId: string) {
   await ensureNeonTables();
 

@@ -132,11 +132,11 @@ export default function WaitingPage() {
   const showSpinner = loading || (status === "pending" && !error);
 
   return (
-    <PageShell title="Төлбөрийн төлөв" subtitle="Bonum болон захиалгын төлөвийг шалгаж байна">
+    <PageShell title="Төлбөрийн төлөв" subtitle="Bonum болон захиалгын төлөвийг бодит цагт шалгаж байна">
       <div className="mx-auto flex min-h-[70vh] w-full max-w-2xl items-center justify-center">
-        <div className={`w-full rounded-3xl border p-8 text-center ${copy.tone}`}>
+        <div className={`w-full rounded-[2rem] border border-white/10 bg-black/35 p-8 text-center shadow-[0_22px_60px_rgba(0,0,0,0.28)] backdrop-blur-2xl ${copy.tone}`}>
           {showSpinner ? (
-            <div className="mx-auto mb-6 h-12 w-12 animate-spin rounded-full border-4 border-neutral-700 border-t-neutral-100" />
+            <div className="mx-auto mb-6 h-12 w-12 animate-spin rounded-full border-4 border-white/20 border-t-[#43f0c1]" />
           ) : (
             <div className="mb-6 text-5xl">{status === "approved" ? "OK" : status === "rejected" ? "X" : "..."}</div>
           )}
@@ -146,15 +146,15 @@ export default function WaitingPage() {
           </div>
 
           <h1 className="mt-5 text-2xl font-bold">{copy.title}</h1>
-          <p className="mt-2 text-sm text-neutral-300">{copy.subtitle}</p>
+          <p className="mt-2 text-sm text-[#f4efe8]/72">{copy.subtitle}</p>
 
           {order && (
-            <div className="mt-6 rounded-2xl border border-neutral-800 bg-neutral-950/50 p-4 text-left">
-              <p className="text-sm text-neutral-300">Захиалгын дугаар: {order.id}</p>
+            <div className="mt-6 rounded-[1.5rem] border border-white/10 bg-black/30 p-4 text-left">
+              <p className="text-sm text-[#f4efe8]/72">Захиалгын дугаар: {order.id}</p>
               {order.bonumInvoiceId && (
-                <p className="mt-2 text-sm text-neutral-300">Invoice: {order.bonumInvoiceId}</p>
+                <p className="mt-2 text-sm text-[#f4efe8]/72">Invoice: {order.bonumInvoiceId}</p>
               )}
-              <p className="mt-2 text-sm text-neutral-300">Нийт тоо: {order.totalCount}</p>
+              <p className="mt-2 text-sm text-[#f4efe8]/72">Нийт тоо: {order.totalCount}</p>
             </div>
           )}
 
@@ -172,7 +172,7 @@ export default function WaitingPage() {
                   clearActiveOrderId();
                   router.push("/select");
                 }}
-                className="flex-1 rounded-xl bg-emerald-600 px-4 py-3 text-sm font-bold text-white transition hover:bg-emerald-500"
+                className="flex-1 rounded-[1.2rem] bg-[#43f0c1] px-4 py-3 text-sm font-extrabold text-[#04110d] shadow-[0_18px_36px_rgba(67,240,193,0.26)] transition hover:-translate-y-0.5 hover:bg-[#61f4ce]"
               >
                 Шинэ захиалга хийх
               </button>
@@ -180,7 +180,7 @@ export default function WaitingPage() {
               <button
                 type="button"
                 onClick={() => router.push("/account")}
-                className="flex-1 rounded-xl bg-rose-600 px-4 py-3 text-sm font-bold text-white transition hover:bg-rose-500"
+                className="flex-1 rounded-[1.2rem] bg-rose-600 px-4 py-3 text-sm font-bold text-white transition hover:bg-rose-500"
               >
                 Дахин төлөх
               </button>
@@ -189,7 +189,7 @@ export default function WaitingPage() {
             <button
               type="button"
               onClick={() => router.push("/account")}
-              className="flex-1 rounded-xl border border-neutral-700 px-4 py-3 text-sm font-semibold text-neutral-100 transition hover:bg-neutral-800"
+              className="flex-1 rounded-[1.2rem] border border-white/10 bg-white/5 px-4 py-3 text-sm font-semibold text-[#f4efe8] transition hover:border-white/20 hover:bg-white/10"
             >
               Данс руу буцах
             </button>

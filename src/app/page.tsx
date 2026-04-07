@@ -1,14 +1,25 @@
 "use client";
 
-import Link from "next/link";
+import Script from "next/script";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { AuthForm } from "@/components/auth-form";
-import { PageShell } from "@/components/page-shell";
-import { RoleSelector } from "@/components/role-selector";
 import { ADMIN_STUDENT, DELIVERY_TEACHER } from "@/lib/constants";
 import { setSession } from "@/lib/storage";
 import type { EntryRole } from "@/lib/types";
+import { Cormorant_Garamond, Manrope } from "next/font/google";
+import styles from "./page.module.css";
+
+const displayFont = Cormorant_Garamond({
+  subsets: ["latin"],
+  weight: ["400", "500", "600", "700"],
+  style: ["normal", "italic"],
+});
+
+const bodyFont = Manrope({
+  subsets: ["latin"],
+  weight: ["400", "500", "600", "700", "800"],
+});
 
 export default function HomePage() {
   const router = useRouter();
@@ -77,47 +88,101 @@ export default function HomePage() {
   }
 
   return (
-    <PageShell>
-      <div className="mx-auto flex min-h-[80vh] w-full max-w-xl items-center">
-        <div className="w-full rounded-3xl border border-neutral-800 bg-neutral-900/70 p-6 shadow-2xl shadow-black/40 sm:p-7">
-          <div className="mb-6 text-center">
-            <h1 className="text-2xl font-bold">
-              Сургууль доторх хоол захиалга
+    <main className={`${styles.page} ${bodyFont.className}`}>
+      <Script src="/agency-landing.js" strategy="afterInteractive" />
+
+      <section className={styles.hero}>
+        <video
+          className={styles.heroVideo}
+          autoPlay
+          muted
+          loop
+          playsInline
+          preload="metadata"
+          poster="https://images.pexels.com/videos/3129957/free-video-3129957.jpg?auto=compress&cs=tinysrgb&fit=crop&h=1080&w=1920"
+        >
+          <source
+            src="https://videos.pexels.com/video-files/3129957/3129957-hd_1920_1080_25fps.mp4"
+            type="video/mp4"
+          />
+        </video>
+
+        <div className={styles.heroGlow} />
+
+        <div className={styles.heroShell}>
+          <div className={styles.heroContent}>
+            <div className={styles.brandBadge} data-reveal>
+              <span className={styles.wordmarkDot} />
+              <span>Pinecone Delivery</span>
+            </div>
+
+            <p className={styles.kicker} data-reveal>
+              Pinecone-д зориулсан
+            </p>
+
+            <h1 className={`${styles.heroTitle} ${displayFont.className}`} data-reveal>
+              Прешикийн хүргэлтийн website
             </h1>
-            <p className="mt-2 text-sm text-neutral-400">
-              Эрхээ сонгоод үргэлжлүүлнэ үү
+
+            <p className={styles.heroBody} data-reveal>
+              Сурагчид захиалгаа хурдан өгч, багш нар хүргэлтээ нэг дэлгэцээс хянах
+              хялбар, ойлгомжтой систем.
             </p>
           </div>
 
-          <RoleSelector
-            selectedRole={role}
-            onSelect={(nextRole) => setRole(nextRole)}
-          />
-
-          {role && (
-            <div className="mt-5">
-              <AuthForm role={role} onSubmit={handleAuthSubmit} />
+          <div className={styles.accessDock} data-reveal>
+            <div className={styles.accessHeader}>
+              <p className={styles.sectionEyebrow}>Нэвтрэх</p>
+              <h2 className={styles.accessTitle}>Сурагч эсвэл багшийн эрхээ сонгоно уу</h2>
             </div>
-          )}
 
-          {teacherDenied && (
-            <div className="mt-4 rounded-xl border border-rose-800 bg-rose-950/40 p-3">
-              <p className="text-sm font-medium text-rose-200">
-                Нэвтрэх эрхгүй байна
-              </p>
-              <p className="mt-1 text-xs text-rose-300/80">
-                Энэ нэрээр хүргэлтийн хуудас руу нэвтрэх боломжгүй.
-              </p>
+            <div className={styles.roleSwitch}>
+              <button
+                type="button"
+                className={styles.roleButton}
+                data-active={role === "student" ? "true" : "false"}
+                onClick={() => {
+                  setTeacherDenied(false);
+                  setRole("student");
+                }}
+              >
+                <span>Сурагч</span>
+                <small>Захиалга хийх</small>
+              </button>
+
+              <button
+                type="button"
+                className={styles.roleButton}
+                data-active={role === "teacher" ? "true" : "false"}
+                onClick={() => {
+                  setTeacherDenied(false);
+                  setRole("teacher");
+                }}
+              >
+                <span>Багш</span>
+                <small>Хүргэлт шалгах</small>
+              </button>
             </div>
-          )}
 
-          <div className="mt-6 text-center text-xs text-neutral-500">
-            <Link href="/" className="transition hover:text-neutral-300">
-              Буцах
-            </Link>
+            {role ? (
+              <div className={styles.authWrap}>
+                <AuthForm role={role} onSubmit={handleAuthSubmit} />
+              </div>
+            ) : (
+              <p className={styles.accessHint}>
+                Дээрх хоёр товчийн аль нэгийг дарж үргэлжлүүлээрэй.
+              </p>
+            )}
+
+            {teacherDenied && (
+              <div className={styles.deniedCard}>
+                <p>Нэвтрэх эрхгүй байна</p>
+                <span>Энэ нэрээр хүргэлтийн хуудас руу нэвтрэх боломжгүй.</span>
+              </div>
+            )}
           </div>
         </div>
-      </div>
-    </PageShell>
+      </section>
+    </main>
   );
 }
