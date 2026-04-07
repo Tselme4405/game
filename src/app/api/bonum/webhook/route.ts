@@ -45,7 +45,10 @@ function pickBoolean(record: AnyRecord | null, keys: string[]) {
   return null;
 }
 
-function normalizeBonumStatus(status: string | null, successFlag: boolean | null) {
+function normalizeBonumStatus(
+  status: string | null,
+  successFlag: boolean | null,
+) {
   const normalized = status?.trim().toUpperCase() ?? null;
 
   if (
@@ -92,6 +95,7 @@ export async function POST(req: NextRequest) {
   // TODO: Verify Bonum request signature once Bonum provides the webhook secret.
   // Read the raw body before JSON.parse, then HMAC-SHA256 it with BONUM_WEBHOOK_SECRET
   // and compare to req.headers.get("X-Bonum-Signature"). Return 401 on mismatch.
+  //dgbfgbfyby
 
   const root = asRecord(payload);
   const data = asRecord(root?.data);
@@ -105,10 +109,38 @@ export async function POST(req: NextRequest) {
     pickString(body, ["invoiceId", "invoice_id"]);
 
   const transactionId =
-    pickString(root, ["transactionId", "transaction_id", "merchant_order_id", "merchantOrderId", "order_id", "orderId"]) ??
-    pickString(data, ["transactionId", "transaction_id", "merchant_order_id", "merchantOrderId", "order_id", "orderId"]) ??
-    pickString(result, ["transactionId", "transaction_id", "merchant_order_id", "merchantOrderId", "order_id", "orderId"]) ??
-    pickString(body, ["transactionId", "transaction_id", "merchant_order_id", "merchantOrderId", "order_id", "orderId"]);
+    pickString(root, [
+      "transactionId",
+      "transaction_id",
+      "merchant_order_id",
+      "merchantOrderId",
+      "order_id",
+      "orderId",
+    ]) ??
+    pickString(data, [
+      "transactionId",
+      "transaction_id",
+      "merchant_order_id",
+      "merchantOrderId",
+      "order_id",
+      "orderId",
+    ]) ??
+    pickString(result, [
+      "transactionId",
+      "transaction_id",
+      "merchant_order_id",
+      "merchantOrderId",
+      "order_id",
+      "orderId",
+    ]) ??
+    pickString(body, [
+      "transactionId",
+      "transaction_id",
+      "merchant_order_id",
+      "merchantOrderId",
+      "order_id",
+      "orderId",
+    ]);
 
   const status =
     pickString(root, ["status", "paymentStatus", "payment_status"]) ??
@@ -159,7 +191,12 @@ export async function POST(req: NextRequest) {
     console.log("[bonum/webhook] order", order.id, "marked as approved");
   } else if (normalizedStatus === "rejected") {
     await updateAppOrderStatus(order.id, "rejected");
-    console.log("[bonum/webhook] order", order.id, "marked as rejected, status:", status);
+    console.log(
+      "[bonum/webhook] order",
+      order.id,
+      "marked as rejected, status:",
+      status,
+    );
   } else {
     console.log("[bonum/webhook] unhandled payload for order:", order.id, {
       invoiceId,
