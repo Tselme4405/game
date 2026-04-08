@@ -8,6 +8,7 @@ import type { BonumEnvironment } from "@/lib/types";
 const BASE_URL = process.env.BONUM_BASE_URL!;
 const APP_SECRET = process.env.BONUM_APP_SECRET!;
 const TERMINAL_ID = process.env.BONUM_TERMINAL_ID!;
+const MERCHANT_KEY = process.env.BONUM_MERCHANT_KEY?.trim() ?? "";
 const RAW_ENV = process.env.BONUM_ENV?.trim().toLowerCase() ?? "test";
 
 const HOST_ALLOWLIST: Record<BonumEnvironment, readonly string[]> = {
@@ -21,6 +22,8 @@ export interface BonumConfig {
   environment: BonumEnvironment;
   baseUrl: string;
   baseHost: string;
+  pspBaseUrl: string;
+  merchantKey?: string;
 }
 
 function assertBonumEnvironment(value: string): BonumEnvironment {
@@ -57,11 +60,18 @@ export function getBonumConfig(): BonumConfig {
     environment,
     baseUrl: BASE_URL,
     baseHost,
+    pspBaseUrl:
+      environment === "production" ? "https://psp.bonum.mn" : "https://testpsp.bonum.mn",
+    merchantKey: MERCHANT_KEY || undefined,
   };
 }
 
 export function getBonumEnvironment(): BonumEnvironment {
   return getBonumConfig().environment;
+}
+
+export function hasBonumMerchantKey() {
+  return Boolean(getBonumConfig().merchantKey);
 }
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -100,6 +110,13 @@ export interface CreateQrResult {
   links: BonumLink[];
   expiresIn?: number;
   expiresAt?: string;
+}
+
+export interface BonumPaymentLogEntry {
+  merchant_order_id?: string;
+  amount?: number;
+  success?: boolean;
+  createdAt?: string;
 }
 
 // ── Auth ─────────────────────────────────────────────────────────────────────
@@ -212,4 +229,61 @@ export async function createBonumQr(
     expiresIn: typeof json.data.expiresIn === "number" ? json.data.expiresIn : undefined,
     expiresAt: typeof json.data.expiresAt === "string" ? json.data.expiresAt : undefined,
   };
+}
+
+export async function readBonumPaymentLog(orderId: string): Promise<BonumPaymentLogEntry[]> {
+  const config = getBonumConfig();
+
+  if (!config.merchantKey) {
+    throw new Error("BONUM_MERCHANT_KEY is not configured.");
+  }
+
+  const url = new URL(`${config.pspBaseUrl}/api/payment-log/read`);
+  url.searchParams.set("order_id", orderId);
+
+  const res = await fetch(url, {
+    cache: "no-store",
+    method: "GET",
+    headers: {
+      "x-merchant-key": config.merchantKey,
+    },
+  });
+
+  logBonumDiagnostic("payment-log-read", {
+    environment: config.environment,
+    pspBaseUrl: config.pspBaseUrl,
+    status: res.status,
+    orderId,
+  });
+
+  if (!res.ok) {
+    const body = await res.text();
+    throw new Error(`Bonum payment-log/read failed (${res.status}): ${body}`);
+  }
+
+  const json = (await res.json()) as unknown;
+
+  if (!Array.isArray(json)) {
+    throw new Error(`Bonum payment-log/read: unexpected response shape: ${JSON.stringify(json)}`);
+  }
+
+  const entries = json
+    .filter((entry): entry is Record<string, unknown> => !!entry && typeof entry === "object")
+    .map((entry) => ({
+      merchant_order_id:
+        typeof entry.merchant_order_id === "string" ? entry.merchant_order_id : undefined,
+      amount: typeof entry.amount === "number" ? entry.amount : undefined,
+      success: typeof entry.success === "boolean" ? entry.success : undefined,
+      createdAt: typeof entry.createdAt === "string" ? entry.createdAt : undefined,
+    }));
+
+  logBonumDiagnostic("payment-log-read-result", {
+    environment: config.environment,
+    orderId,
+    resultCount: entries.length,
+    successCount: entries.filter((entry) => entry.success === true).length,
+    failureCount: entries.filter((entry) => entry.success === false).length,
+  });
+
+  return entries;
 }
