@@ -4,7 +4,7 @@ import Script from "next/script";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { AuthForm } from "@/components/auth-form";
-import { ADMIN_STUDENT, DELIVERY_TEACHER } from "@/lib/constants";
+import { DELIVERY_TEACHER } from "@/lib/constants";
 import { setSession } from "@/lib/storage";
 import type { EntryRole } from "@/lib/types";
 import { Cormorant_Garamond, Manrope } from "next/font/google";
@@ -29,7 +29,7 @@ export default function HomePage() {
   async function saveUserToDb(input: {
     name: string;
     classNumber?: string;
-    role: "student" | "teacher" | "admin";
+    role: "student" | "teacher";
   }) {
     const response = await fetch("/api/users", {
       method: "POST",
@@ -64,25 +64,16 @@ export default function HomePage() {
       return;
     }
 
-    const isAdminDemo =
-      session.name === ADMIN_STUDENT.name &&
-      session.classNumber === ADMIN_STUDENT.classNumber;
-
     await saveUserToDb({
       name: session.name,
       classNumber: session.classNumber,
-      role: isAdminDemo ? "admin" : "student",
+      role: "student",
     });
 
     setSession({
       ...session,
-      role: isAdminDemo ? "admin" : "student",
+      role: "student",
     });
-
-    if (isAdminDemo) {
-      router.push("/admin");
-      return;
-    }
 
     router.push("/select");
   }

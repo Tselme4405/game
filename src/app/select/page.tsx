@@ -5,7 +5,7 @@ import { useState } from "react";
 import { FoodCard } from "@/components/food-card";
 import { PageShell } from "@/components/page-shell";
 import { MENU_ITEMS } from "@/lib/constants";
-import { isAdminSession, isNormalStudentSession } from "@/lib/guards";
+import { isNormalStudentSession } from "@/lib/guards";
 import { getCart, getSession, setCart } from "@/lib/storage";
 import type { Cart } from "@/lib/types";
 
@@ -25,11 +25,6 @@ export default function SelectPage() {
   const session = getSession();
   if (!session) {
     router.replace("/");
-    return null;
-  }
-
-  if (isAdminSession(session)) {
-    router.replace("/admin");
     return null;
   }
 
@@ -78,7 +73,7 @@ export default function SelectPage() {
         <button
           type="button"
           onClick={goNext}
-          className="rounded-full bg-[#43f0c1] px-5 py-2.5 text-sm font-extrabold text-[#04110d] shadow-[0_14px_30px_rgba(67,240,193,0.26)] transition hover:-translate-y-0.5 hover:shadow-[0_18px_36px_rgba(67,240,193,0.34)]"
+          className="hidden rounded-full bg-[#43f0c1] px-5 py-2.5 text-sm font-extrabold text-[#04110d] shadow-[0_14px_30px_rgba(67,240,193,0.26)] transition hover:-translate-y-0.5 hover:shadow-[0_18px_36px_rgba(67,240,193,0.34)] sm:inline-flex"
         >
           Төлбөр рүү үргэлжлүүлэх
         </button>
@@ -105,7 +100,7 @@ export default function SelectPage() {
             <h2 className="mt-3 text-2xl font-bold text-[#f4efe8]">{session.name}</h2>
             <p className="mt-1 text-sm text-[#f4efe8]/68">Анги: {session.classNumber}</p>
 
-            <div className="mt-5 grid gap-3 sm:grid-cols-3 xl:grid-cols-1">
+            <div className="mt-5 grid gap-3 grid-cols-1 sm:grid-cols-3 xl:grid-cols-1">
               <div className="rounded-[1.5rem] border border-white/10 bg-white/5 p-4">
                 <p className="text-[11px] font-bold uppercase tracking-[0.24em] text-[#f4efe8]/52">
                   Сонгосон төрөл
@@ -153,6 +148,27 @@ export default function SelectPage() {
             </div>
           )}
         </aside>
+      </div>
+
+      <div className="sticky bottom-3 z-20 -mx-1 mt-6 rounded-[1.5rem] border border-white/10 bg-black/70 p-3 shadow-[0_22px_60px_rgba(0,0,0,0.32)] backdrop-blur-2xl sm:hidden">
+        <div className="flex items-center justify-between gap-3">
+          <div className="min-w-0">
+            <p className="text-[11px] font-extrabold uppercase tracking-[0.24em] text-[#43f0c1]">
+              Нийт
+            </p>
+            <p className="mt-1 text-sm text-[#f4efe8]/68">
+              {totalCount} ш • {formatMoney(totalPayment)}
+            </p>
+          </div>
+
+          <button
+            type="button"
+            onClick={goNext}
+            className="shrink-0 rounded-[1rem] bg-[#43f0c1] px-4 py-3 text-sm font-extrabold text-[#04110d] shadow-[0_18px_36px_rgba(67,240,193,0.26)] transition hover:bg-[#61f4ce]"
+          >
+            Төлөх
+          </button>
+        </div>
       </div>
     </PageShell>
   );

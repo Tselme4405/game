@@ -140,32 +140,16 @@ export function clearActiveOrderId() {
 }
 
 export function createOrder(payload: Omit<OrderRecord, "id" | "createdAt">) {
-  const orders = getOrders();
-  const samePendingIndex = orders.findIndex(
-    (order) =>
-      order.status === "pending" &&
-      order.userName === payload.userName &&
-      (order.classNumber ?? "") === (payload.classNumber ?? ""),
-  );
-
   const baseOrder: OrderRecord = {
     ...payload,
     id: buildId(),
     createdAt: new Date().toISOString(),
   };
 
-  if (samePendingIndex >= 0) {
-    orders[samePendingIndex] = {
-      ...orders[samePendingIndex],
-      ...baseOrder,
-      id: orders[samePendingIndex].id,
-    };
-  } else {
-    orders.unshift(baseOrder);
-  }
-
+  const orders = getOrders();
+  orders.unshift(baseOrder);
   setOrders(orders);
-  return samePendingIndex >= 0 ? orders[samePendingIndex] : baseOrder;
+  return baseOrder;
 }
 
 export function updateOrderStatus(orderId: string, status: PaymentStatus) {

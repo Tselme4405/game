@@ -8,21 +8,21 @@ export function QuantityStepper({ value, onChange }: QuantityStepperProps) {
   const increase = () => onChange(value + 1);
 
   return (
-    <div className="flex items-center gap-3">
+    <div className="flex items-center justify-between gap-3 sm:justify-start">
       <button
         type="button"
         onClick={decrease}
-        className="h-11 w-11 rounded-2xl border border-white/10 bg-white/5 text-lg text-[#f4efe8] transition hover:border-white/20 hover:bg-white/10"
+        className="h-11 w-11 shrink-0 rounded-2xl border border-white/10 bg-white/5 text-lg text-[#f4efe8] transition hover:border-white/20 hover:bg-white/10"
       >
         -
       </button>
-      <div className="min-w-14 rounded-2xl border border-[#43f0c1]/25 bg-black/45 px-4 py-2.5 text-center text-sm font-bold text-[#f4efe8] shadow-[inset_0_0_0_1px_rgba(67,240,193,0.08)]">
+      <div className="min-w-0 flex-1 rounded-2xl border border-[#43f0c1]/25 bg-black/45 px-4 py-2.5 text-center text-sm font-bold text-[#f4efe8] shadow-[inset_0_0_0_1px_rgba(67,240,193,0.08)] sm:min-w-14 sm:flex-none">
         {value}
       </div>
       <button
         type="button"
         onClick={increase}
-        className="h-11 w-11 rounded-2xl border border-[#43f0c1]/30 bg-[#43f0c1]/12 text-lg text-[#baffef] transition hover:border-[#43f0c1]/50 hover:bg-[#43f0c1]/18"
+        className="h-11 w-11 shrink-0 rounded-2xl border border-[#43f0c1]/30 bg-[#43f0c1]/12 text-lg text-[#baffef] transition hover:border-[#43f0c1]/50 hover:bg-[#43f0c1]/18"
       >
         +
       </button>

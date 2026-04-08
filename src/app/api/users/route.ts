@@ -3,7 +3,7 @@ import { insertUser, type UserRole } from "@/lib/server/neon";
 
 function parseRole(value: unknown): UserRole | null {
   const normalized = String(value ?? "").trim().toLowerCase();
-  if (normalized === "student" || normalized === "teacher" || normalized === "admin") {
+  if (normalized === "student" || normalized === "teacher") {
     return normalized;
   }
   return null;
@@ -23,12 +23,12 @@ export async function POST(req: Request) {
     }
 
     if (!role) {
-      return new NextResponse("role must be student/teacher/admin", {
+      return new NextResponse("role must be student/teacher", {
         status: 400,
       });
     }
 
-    if ((role === "student" || role === "admin") && !classNumber) {
+    if (role === "student" && !classNumber) {
       return new NextResponse("class_number required", { status: 400 });
     }
 

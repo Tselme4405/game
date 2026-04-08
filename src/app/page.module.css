@@ -843,6 +843,49 @@
     overflow-x: hidden;
   }
 
+  .hero {
+    min-height: 100svh;
+    padding-top: 0.85rem;
+    padding-bottom: calc(env(safe-area-inset-bottom) + 1rem);
+  }
+
+  .heroShell {
+    min-height: calc(100svh - 1.7rem);
+    gap: 1.25rem;
+    align-items: end;
+  }
+
+  .heroContent {
+    padding-top: 4.75rem;
+    padding-bottom: 0;
+  }
+
+  .brandBadge {
+    margin-bottom: 1rem;
+    padding: 0.72rem 0.9rem;
+    font-size: 0.72rem;
+    letter-spacing: 0.12em;
+  }
+
+  .heroTitle {
+    max-width: 8ch;
+    font-size: clamp(3rem, 14vw, 4.4rem);
+    line-height: 0.94;
+  }
+
+  .heroBody {
+    margin-top: 1rem;
+    font-size: 0.95rem;
+    line-height: 1.65;
+  }
+
+  .accessDock {
+    width: 100%;
+    max-width: none;
+    padding: 1rem;
+    border-radius: 1.35rem;
+  }
+
   .navLinks {
     gap: 0.25rem;
   }

@@ -5,7 +5,7 @@ import { useEffect, useRef, useState } from "react";
 import { EmptyState } from "@/components/empty-state";
 import { PageShell } from "@/components/page-shell";
 import { MENU_ITEMS } from "@/lib/constants";
-import { isAdminSession, isNormalStudentSession } from "@/lib/guards";
+import { isNormalStudentSession } from "@/lib/guards";
 import { clearActiveOrderId, clearCart, createOrder, getCart, getSession, setActiveOrderId, upsertOrder } from "@/lib/storage";
 import type { BonumEnvironment, Cart, OrderRecord, PaymentStatus, Session } from "@/lib/types";
 
@@ -119,6 +119,10 @@ export default function AccountPage() {
 
     const syncPaymentStatus = async () => {
       try {
+        if (typeof document !== "undefined" && document.visibilityState === "hidden") {
+          return;
+        }
+
         const response = await fetch(`/api/orders/${qrOrderId}`, {
           cache: "no-store",
         });
@@ -158,11 +162,20 @@ export default function AccountPage() {
       void syncPaymentStatus();
     }, 3000);
 
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "visible") {
+        void syncPaymentStatus();
+      }
+    };
+
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+
     return () => {
       cancelled = true;
       if (intervalId) {
         window.clearInterval(intervalId);
       }
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
   }, [qrOrderId, qrPaymentStatus]);
 
@@ -172,11 +185,6 @@ export default function AccountPage() {
 
   if (!session) {
     router.replace("/");
-    return null;
-  }
-
-  if (isAdminSession(session)) {
-    router.replace("/admin");
     return null;
   }
 
@@ -347,7 +355,7 @@ export default function AccountPage() {
     "rounded-[2rem] border border-white/10 bg-black/35 p-5 shadow-[0_22px_60px_rgba(0,0,0,0.28)] backdrop-blur-2xl sm:p-6";
   const panelCard = "rounded-[1.5rem] border border-white/10 bg-white/5 p-4";
   const subtleRow =
-    "flex items-center justify-between gap-3 rounded-[1.25rem] border border-white/10 bg-black/30 px-4 py-3";
+    "flex flex-col items-start justify-between gap-3 rounded-[1.25rem] border border-white/10 bg-black/30 px-4 py-3 sm:flex-row sm:items-center";
   const copyButton =
     "rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-[11px] font-bold uppercase tracking-[0.2em] text-[#f4efe8]/78 transition hover:border-white/20 hover:bg-white/10";
   const secondaryButton =
@@ -358,7 +366,7 @@ export default function AccountPage() {
   return (
     <PageShell title="Төлбөрийн хэсэг" subtitle="QR, банкны апп, эсвэл шилжүүлгээр төлөөд төлөв нь автоматаар шинэчлэгдэнэ.">
       <div className="grid gap-6 xl:grid-cols-[340px_minmax(0,1fr)]">
-        <aside className="space-y-4">
+        <aside className="order-2 space-y-4 xl:order-1">
           <section className={glassCard}>
             <p className="text-[11px] font-extrabold uppercase tracking-[0.3em] text-[#43f0c1]">
               Student
@@ -421,7 +429,7 @@ export default function AccountPage() {
           </section>
         </aside>
 
-        <section className="space-y-4">
+        <section className="order-1 space-y-4 xl:order-2">
           <section className={glassCard}>
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div>
@@ -588,14 +596,14 @@ export default function AccountPage() {
                   <p className="mb-3 text-[11px] font-extrabold uppercase tracking-[0.3em] text-[#43f0c1]">
                     Bank Apps
                   </p>
-                  <div className="grid gap-3 sm:grid-cols-3">
+                  <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
                     {actionableLinks.map((item) => (
                       <a
                         key={item.name}
                         href={getBonumLinkHref(item)}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="flex flex-col items-center gap-2 rounded-[1.5rem] border border-white/10 bg-black/30 px-3 py-4 text-center transition hover:border-white/20 hover:bg-black/40"
+                        className="flex min-h-[92px] flex-col items-center justify-center gap-2 rounded-[1.5rem] border border-white/10 bg-black/30 px-3 py-4 text-center transition hover:border-white/20 hover:bg-black/40"
                       >
                         {item.logo && (
                           <img src={item.logo} alt={item.name} width={36} height={36} className="rounded-lg" />
@@ -609,19 +617,19 @@ export default function AccountPage() {
 
               {qrData.status !== "approved" && (
                 <div className="mt-5 grid gap-4 lg:grid-cols-[260px_minmax(0,1fr)]">
-                  <div className="flex flex-col items-center gap-3 rounded-[1.75rem] border border-white/10 bg-black/30 p-5">
+                  <div className="flex flex-col items-center gap-3 rounded-[1.75rem] border border-white/10 bg-black/30 p-4 sm:p-5">
                     <img
                       key={qrData.invoiceId}
                       src={`data:image/png;base64,${qrData.qrImage}`}
                       alt="Bonum QR code"
                       width={220}
                       height={220}
-                      className="rounded-[1.25rem]"
+                      className="h-auto w-full max-w-[220px] rounded-[1.25rem]"
                     />
-                    <p className="text-xs text-[#f4efe8]/52">Invoice: {qrData.invoiceId}</p>
+                    <p className="break-all text-center text-xs text-[#f4efe8]/52">Invoice: {qrData.invoiceId}</p>
                   </div>
 
-                  <div className="rounded-[1.75rem] border border-white/10 bg-black/30 p-5">
+                  <div className="rounded-[1.75rem] border border-white/10 bg-black/30 p-4 sm:p-5">
                     <p className="text-sm leading-7 text-[#f4efe8]/72">
                       {isTestMode
                         ? "Лавлах зорилгоор харуулж байна. Test mode дээр scanner-ээр бүү уншуул."
@@ -677,6 +685,30 @@ export default function AccountPage() {
           ) : null}
         </section>
       </div>
+
+      {!qrData && (
+        <div className="sticky bottom-3 z-20 -mx-1 mt-6 rounded-[1.5rem] border border-white/10 bg-black/70 p-3 shadow-[0_22px_60px_rgba(0,0,0,0.32)] backdrop-blur-2xl sm:hidden">
+          <div className="grid grid-cols-2 gap-3">
+            <button
+              type="button"
+              onClick={handleBonumQr}
+              disabled={qrLoading || selectedItems.length === 0}
+              className={`${primaryButton} w-full disabled:cursor-not-allowed disabled:opacity-50`}
+            >
+              {qrLoading ? "Уншиж байна..." : "QR төлбөр"}
+            </button>
+
+            <button
+              type="button"
+              onClick={handlePaid}
+              disabled={submitting || selectedItems.length === 0}
+              className={`${secondaryButton} w-full disabled:cursor-not-allowed disabled:opacity-50`}
+            >
+              {submitting ? "..." : "Шилжүүлэг"}
+            </button>
+          </div>
+        </div>
+      )}
     </PageShell>
   );
 }

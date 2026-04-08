@@ -14,7 +14,7 @@ function isPaymentStatus(value: unknown): value is PaymentStatus {
 }
 
 function isUserRole(value: unknown): value is UserRole {
-  return value === "student" || value === "teacher" || value === "admin";
+  return value === "student" || value === "teacher";
 }
 
 function parseOrderRecord(body: unknown): OrderRecord | null {
@@ -61,9 +61,14 @@ function parseOrderRecord(body: unknown): OrderRecord | null {
   };
 }
 
-export async function GET() {
+export async function GET(req: Request) {
   try {
-    const orders = await listAppOrders();
+    const { searchParams } = new URL(req.url);
+    const statusParam = searchParams.get("status");
+    const limitParam = Number(searchParams.get("limit") ?? "200");
+    const status = isPaymentStatus(statusParam) ? statusParam : undefined;
+    const limit = Number.isFinite(limitParam) ? limitParam : 200;
+    const orders = await listAppOrders({ status, limit });
     return NextResponse.json(orders);
   } catch (error) {
     console.error("API /api/orders GET error:", error);

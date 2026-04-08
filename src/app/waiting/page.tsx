@@ -72,6 +72,10 @@ export default function WaitingPage() {
 
     const syncOrder = async () => {
       try {
+        if (typeof document !== "undefined" && document.visibilityState === "hidden") {
+          return;
+        }
+
         const response = await fetch(`/api/orders/${activeOrderId}`, {
           cache: "no-store",
         });
@@ -115,9 +119,18 @@ export default function WaitingPage() {
       void syncOrder();
     }, 3000);
 
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "visible") {
+        void syncOrder();
+      }
+    };
+
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+
     return () => {
       cancelled = true;
       if (intervalId) clearInterval(intervalId);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
   }, [router]);
 

@@ -91,6 +91,20 @@ export async function ensureNeonTables() {
   await prisma.$executeRawUnsafe(`ALTER TABLE app_orders ADD COLUMN IF NOT EXISTS bonum_invoice_id TEXT;`);
   await prisma.$executeRawUnsafe(`ALTER TABLE app_orders ADD COLUMN IF NOT EXISTS bonum_transaction_id TEXT;`);
   await prisma.$executeRawUnsafe(`ALTER TABLE app_orders ADD COLUMN IF NOT EXISTS bonum_paid_at TIMESTAMPTZ;`);
+  await prisma.$executeRawUnsafe(`
+    CREATE INDEX IF NOT EXISTS idx_app_orders_status_created_at
+    ON app_orders (status, created_at DESC);
+  `);
+  await prisma.$executeRawUnsafe(`
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_app_orders_bonum_invoice_unique
+    ON app_orders (bonum_invoice_id)
+    WHERE bonum_invoice_id IS NOT NULL;
+  `);
+  await prisma.$executeRawUnsafe(`
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_app_orders_bonum_transaction_unique
+    ON app_orders (bonum_transaction_id)
+    WHERE bonum_transaction_id IS NOT NULL;
+  `);
 
   await prisma.$executeRawUnsafe(`
     CREATE TABLE IF NOT EXISTS bonum_webhook_events (
@@ -186,13 +200,30 @@ export async function upsertAppOrder(input: OrderRecord) {
   return normalizeAppOrder(rows[0]);
 }
 
-export async function listAppOrders() {
+export async function listAppOrders(options?: {
+  status?: PaymentStatus;
+  limit?: number;
+}) {
   await ensureNeonTables();
+  const safeLimit = Math.max(1, Math.min(1000, Math.trunc(options?.limit ?? 200)));
+
+  if (options?.status) {
+    const rows = await prisma.$queryRaw<AppOrderRow[]>`
+      SELECT id, user_name, class_number, role, items, total_count, status, created_at, bonum_invoice_id, bonum_transaction_id, bonum_paid_at
+      FROM app_orders
+      WHERE status = ${options.status}
+      ORDER BY created_at DESC
+      LIMIT ${safeLimit}
+    `;
+
+    return rows.map(normalizeAppOrder);
+  }
 
   const rows = await prisma.$queryRaw<AppOrderRow[]>`
     SELECT id, user_name, class_number, role, items, total_count, status, created_at, bonum_invoice_id, bonum_transaction_id, bonum_paid_at
     FROM app_orders
     ORDER BY created_at DESC
+    LIMIT ${safeLimit}
   `;
 
   return rows.map(normalizeAppOrder);
