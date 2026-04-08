@@ -1,7 +1,12 @@
 import { prisma } from "@/lib/prisma";
 import type { UserRole } from "@/lib/types";
 export type { UserRole } from "@/lib/types";
-import type { OrderItem, OrderRecord, PaymentStatus } from "@/lib/types";
+import type {
+  BonumWebhookEvent,
+  OrderItem,
+  OrderRecord,
+  PaymentStatus,
+} from "@/lib/types";
 
 type UserRow = {
   id: bigint | number;
@@ -31,6 +36,17 @@ type AppOrderRow = {
   bonum_invoice_id: string | null;
   bonum_transaction_id: string | null;
   bonum_paid_at: Date | null;
+};
+
+type BonumWebhookEventRow = {
+  id: bigint | number;
+  received_at: Date;
+  invoice_id: string | null;
+  transaction_id: string | null;
+  root_status: string | null;
+  body_status: string | null;
+  matched_order_id: string | null;
+  action: string | null;
 };
 
 function normalizeId(id: bigint | number): number {
@@ -75,6 +91,19 @@ export async function ensureNeonTables() {
   await prisma.$executeRawUnsafe(`ALTER TABLE app_orders ADD COLUMN IF NOT EXISTS bonum_invoice_id TEXT;`);
   await prisma.$executeRawUnsafe(`ALTER TABLE app_orders ADD COLUMN IF NOT EXISTS bonum_transaction_id TEXT;`);
   await prisma.$executeRawUnsafe(`ALTER TABLE app_orders ADD COLUMN IF NOT EXISTS bonum_paid_at TIMESTAMPTZ;`);
+
+  await prisma.$executeRawUnsafe(`
+    CREATE TABLE IF NOT EXISTS bonum_webhook_events (
+      id BIGSERIAL PRIMARY KEY,
+      received_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      invoice_id TEXT,
+      transaction_id TEXT,
+      root_status TEXT,
+      body_status TEXT,
+      matched_order_id TEXT,
+      action TEXT
+    );
+  `);
 }
 
 export async function insertUser(input: {
@@ -234,6 +263,53 @@ export async function markBonumPaid(invoiceId: string) {
   return rows[0] ? normalizeAppOrder(rows[0]) : null;
 }
 
+export async function createBonumWebhookEvent(input: {
+  invoiceId?: string | null;
+  transactionId?: string | null;
+  rootStatus?: string | null;
+  bodyStatus?: string | null;
+  matchedOrderId?: string | null;
+  action?: string | null;
+}) {
+  await ensureNeonTables();
+
+  const rows = await prisma.$queryRaw<BonumWebhookEventRow[]>`
+    INSERT INTO bonum_webhook_events (
+      invoice_id,
+      transaction_id,
+      root_status,
+      body_status,
+      matched_order_id,
+      action
+    )
+    VALUES (
+      ${input.invoiceId ?? null},
+      ${input.transactionId ?? null},
+      ${input.rootStatus ?? null},
+      ${input.bodyStatus ?? null},
+      ${input.matchedOrderId ?? null},
+      ${input.action ?? null}
+    )
+    RETURNING id, received_at, invoice_id, transaction_id, root_status, body_status, matched_order_id, action
+  `;
+
+  return normalizeBonumWebhookEvent(rows[0]);
+}
+
+export async function listBonumWebhookEvents(limit = 20) {
+  await ensureNeonTables();
+
+  const safeLimit = Math.max(1, Math.min(100, Math.trunc(limit)));
+  const rows = await prisma.$queryRaw<BonumWebhookEventRow[]>`
+    SELECT id, received_at, invoice_id, transaction_id, root_status, body_status, matched_order_id, action
+    FROM bonum_webhook_events
+    ORDER BY received_at DESC
+    LIMIT ${safeLimit}
+  `;
+
+  return rows.map(normalizeBonumWebhookEvent);
+}
+
 function normalizeAppOrder(row: AppOrderRow): OrderRecord {
   const items: OrderItem[] = Array.isArray(row.items) ? (row.items as OrderItem[]) : [];
 
@@ -249,5 +325,20 @@ function normalizeAppOrder(row: AppOrderRow): OrderRecord {
     bonumInvoiceId: row.bonum_invoice_id ?? undefined,
     bonumTransactionId: row.bonum_transaction_id ?? undefined,
     bonumPaidAt: row.bonum_paid_at?.toISOString() ?? undefined,
+  };
+}
+
+function normalizeBonumWebhookEvent(
+  row: BonumWebhookEventRow,
+): BonumWebhookEvent {
+  return {
+    id: normalizeId(row.id),
+    receivedAt: row.received_at.toISOString(),
+    invoiceId: row.invoice_id ?? undefined,
+    transactionId: row.transaction_id ?? undefined,
+    rootStatus: row.root_status ?? undefined,
+    bodyStatus: row.body_status ?? undefined,
+    matchedOrderId: row.matched_order_id ?? undefined,
+    action: row.action ?? undefined,
   };
 }

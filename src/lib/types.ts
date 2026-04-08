@@ -44,3 +44,14 @@ export type OrderRecord = {
   bonumTransactionId?: string;
   bonumPaidAt?: string;
 };
+
+export type BonumWebhookEvent = {
+  id: number;
+  receivedAt: string;
+  invoiceId?: string;
+  transactionId?: string;
+  rootStatus?: string;
+  bodyStatus?: string;
+  matchedOrderId?: string;
+  action?: string;
+};

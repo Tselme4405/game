@@ -24,9 +24,12 @@ export async function GET(_: Request, { params }: RouteContext) {
       return new NextResponse("order not found", { status: 404 });
     }
 
-    const syncedOrder = await syncPendingOrderWithBonum(order);
+    const result = await syncPendingOrderWithBonum(order);
 
-    return NextResponse.json(syncedOrder);
+    return NextResponse.json({
+      ...result.order,
+      verificationError: result.verificationError ?? null,
+    });
   } catch (error) {
     console.error("API /api/orders/[id] GET error:", error);
     return new NextResponse("Server error", { status: 500 });
@@ -39,7 +42,7 @@ async function syncPendingOrderWithBonum(order: OrderRecord) {
     !order.bonumTransactionId ||
     !hasBonumMerchantKey()
   ) {
-    return order;
+    return { order };
   }
 
   try {
@@ -54,20 +57,28 @@ async function syncPendingOrderWithBonum(order: OrderRecord) {
       })[0];
 
     if (!latestResult || typeof latestResult.success !== "boolean") {
-      return order;
+      return { order };
     }
 
     if (latestResult.success === true) {
       if (order.bonumInvoiceId) {
-        return (await markBonumPaid(order.bonumInvoiceId)) ?? order;
+        return { order: (await markBonumPaid(order.bonumInvoiceId)) ?? order };
       }
 
-      return (await updateAppOrderStatus(order.id, "approved")) ?? order;
+      return { order: (await updateAppOrderStatus(order.id, "approved")) ?? order };
     }
 
-    return (await updateAppOrderStatus(order.id, "rejected")) ?? order;
+    return { order: (await updateAppOrderStatus(order.id, "rejected")) ?? order };
   } catch (error) {
     console.error("[orders/:id] Bonum fallback verification failed:", error);
-    return order;
+    const message = error instanceof Error ? error.message : "Bonum verification failed";
+
+    return {
+      order,
+      verificationError:
+        message.includes("Invalid API key")
+          ? "Bonum merchant key buruu baina. Merchant key-гээ Bonum PSP-оос зөв авч Vercel дээр шинэчлээд redeploy хийх хэрэгтэй."
+          : message,
+    };
   }
 }

@@ -29,6 +29,10 @@ interface BonumQrData {
   expiresAt: number; // Date.now() + expiresIn * 1000
 }
 
+type OrderStatusResponse = OrderRecord & {
+  verificationError?: string | null;
+};
+
 function getBonumLinkHref(link: BonumLink) {
   return link.deeplink ?? link.link ?? "";
 }
@@ -123,12 +127,13 @@ export default function AccountPage() {
           return;
         }
 
-        const latestOrder = (await response.json()) as OrderRecord;
+        const latestOrder = (await response.json()) as OrderStatusResponse;
 
         if (cancelled) return;
 
         upsertOrder(latestOrder);
         setActiveOrderId(latestOrder.id);
+        setQrError(latestOrder.verificationError ?? "");
         setQrData((current) => {
           if (!current || current.orderId !== latestOrder.id) {
             return current;

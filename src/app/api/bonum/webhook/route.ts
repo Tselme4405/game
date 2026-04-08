@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import {
+  createBonumWebhookEvent,
   findAppOrderByInvoiceId,
   findAppOrderByTransactionId,
   markBonumPaid,
@@ -166,6 +167,11 @@ export async function POST(req: NextRequest) {
 
   if (!invoiceId && !transactionId) {
     console.warn("[bonum/webhook] missing invoiceId/transactionId in payload");
+    await createBonumWebhookEvent({
+      rootStatus: status,
+      bodyStatus: pickString(body, ["status", "invoiceStatus"]),
+      action: "missing-identifiers",
+    });
     return NextResponse.json({ received: true });
   }
 
@@ -178,6 +184,13 @@ export async function POST(req: NextRequest) {
       invoiceId,
       transactionId,
     });
+    await createBonumWebhookEvent({
+      invoiceId,
+      transactionId,
+      rootStatus: status,
+      bodyStatus: pickString(body, ["status", "invoiceStatus"]),
+      action: "order-not-found",
+    });
     // Return 200 so Bonum stops retrying — this invoice is unknown to us
     return NextResponse.json({ received: true });
   }
@@ -188,9 +201,25 @@ export async function POST(req: NextRequest) {
     } else {
       await updateAppOrderStatus(order.id, "approved");
     }
+    await createBonumWebhookEvent({
+      invoiceId,
+      transactionId,
+      rootStatus: status,
+      bodyStatus: pickString(body, ["status", "invoiceStatus"]),
+      matchedOrderId: order.id,
+      action: "approved",
+    });
     console.log("[bonum/webhook] order", order.id, "marked as approved");
   } else if (normalizedStatus === "rejected") {
     await updateAppOrderStatus(order.id, "rejected");
+    await createBonumWebhookEvent({
+      invoiceId,
+      transactionId,
+      rootStatus: status,
+      bodyStatus: pickString(body, ["status", "invoiceStatus"]),
+      matchedOrderId: order.id,
+      action: "rejected",
+    });
     console.log(
       "[bonum/webhook] order",
       order.id,
@@ -198,6 +227,14 @@ export async function POST(req: NextRequest) {
       status,
     );
   } else {
+    await createBonumWebhookEvent({
+      invoiceId,
+      transactionId,
+      rootStatus: status,
+      bodyStatus: pickString(body, ["status", "invoiceStatus"]),
+      matchedOrderId: order.id,
+      action: "unhandled",
+    });
     console.log("[bonum/webhook] unhandled payload for order:", order.id, {
       invoiceId,
       transactionId,

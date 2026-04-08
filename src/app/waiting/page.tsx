@@ -15,6 +15,10 @@ import {
 } from "@/lib/storage";
 import type { OrderRecord } from "@/lib/types";
 
+type OrderStatusResponse = OrderRecord & {
+  verificationError?: string | null;
+};
+
 function getStatusCopy(status: OrderRecord["status"]) {
   switch (status) {
     case "approved":
@@ -85,14 +89,14 @@ export default function WaitingPage() {
           throw new Error("Төлөв шалгаж чадсангүй");
         }
 
-        const nextOrder = (await response.json()) as OrderRecord;
+        const nextOrder = (await response.json()) as OrderStatusResponse;
 
         if (cancelled) return;
 
         upsertOrder(nextOrder);
         setActiveOrderId(nextOrder.id);
         setOrder(nextOrder);
-        setError("");
+        setError(nextOrder.verificationError ?? "");
         setLoading(false);
 
         if (nextOrder.status === "approved" || nextOrder.status === "rejected") {
