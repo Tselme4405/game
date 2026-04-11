@@ -203,9 +203,24 @@ export async function upsertAppOrder(input: OrderRecord) {
 export async function listAppOrders(options?: {
   status?: PaymentStatus;
   limit?: number;
+  createdAfter?: Date;
 }) {
   await ensureNeonTables();
   const safeLimit = Math.max(1, Math.min(1000, Math.trunc(options?.limit ?? 200)));
+  const createdAfter = options?.createdAfter;
+
+  if (options?.status && createdAfter) {
+    const rows = await prisma.$queryRaw<AppOrderRow[]>`
+      SELECT id, user_name, class_number, role, items, total_count, status, created_at, bonum_invoice_id, bonum_transaction_id, bonum_paid_at
+      FROM app_orders
+      WHERE status = ${options.status}
+        AND created_at >= ${createdAfter}
+      ORDER BY created_at DESC
+      LIMIT ${safeLimit}
+    `;
+
+    return rows.map(normalizeAppOrder);
+  }
 
   if (options?.status) {
     const rows = await prisma.$queryRaw<AppOrderRow[]>`
@@ -219,14 +234,37 @@ export async function listAppOrders(options?: {
     return rows.map(normalizeAppOrder);
   }
 
+  if (createdAfter) {
+    const rows = await prisma.$queryRaw<AppOrderRow[]>`
+      SELECT id, user_name, class_number, role, items, total_count, status, created_at, bonum_invoice_id, bonum_transaction_id, bonum_paid_at
+      FROM app_orders
+      WHERE created_at >= ${createdAfter}
+      ORDER BY created_at DESC
+      LIMIT ${safeLimit}
+    `;
+
+    return rows.map(normalizeAppOrder);
+  }
+
   const rows = await prisma.$queryRaw<AppOrderRow[]>`
-    SELECT id, user_name, class_number, role, items, total_count, status, created_at, bonum_invoice_id, bonum_transaction_id, bonum_paid_at
-    FROM app_orders
-    ORDER BY created_at DESC
-    LIMIT ${safeLimit}
-  `;
+      SELECT id, user_name, class_number, role, items, total_count, status, created_at, bonum_invoice_id, bonum_transaction_id, bonum_paid_at
+      FROM app_orders
+      ORDER BY created_at DESC
+      LIMIT ${safeLimit}
+    `;
 
   return rows.map(normalizeAppOrder);
+}
+
+export async function deleteAppOrdersOlderThan(cutoff: Date) {
+  await ensureNeonTables();
+
+  const deletedCount = await prisma.$executeRaw`
+    DELETE FROM app_orders
+    WHERE created_at < ${cutoff}
+  `;
+
+  return deletedCount;
 }
 
 export async function findAppOrderById(orderId: string) {

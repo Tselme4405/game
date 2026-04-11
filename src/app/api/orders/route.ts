@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import {
+  deleteAppOrdersOlderThan,
   insertOrder,
   listAppOrders,
   updateAppOrderStatus,
@@ -8,6 +9,7 @@ import {
 import type { OrderRecord, PaymentStatus, UserRole } from "@/lib/types";
 
 const VALID_STATUSES: PaymentStatus[] = ["draft", "pending", "approved", "rejected"];
+const APP_ORDER_RETENTION_DAYS = 7;
 
 function isPaymentStatus(value: unknown): value is PaymentStatus {
   return VALID_STATUSES.includes(value as PaymentStatus);
@@ -15,6 +17,21 @@ function isPaymentStatus(value: unknown): value is PaymentStatus {
 
 function isUserRole(value: unknown): value is UserRole {
   return value === "student" || value === "teacher";
+}
+
+function parseBoundedInt(
+  value: string | null,
+  fallback: number,
+  min: number,
+  max: number,
+) {
+  const parsed = Number(value ?? "");
+
+  if (!Number.isFinite(parsed)) {
+    return fallback;
+  }
+
+  return Math.max(min, Math.min(max, Math.trunc(parsed)));
 }
 
 function parseOrderRecord(body: unknown): OrderRecord | null {
@@ -65,10 +82,18 @@ export async function GET(req: Request) {
   try {
     const { searchParams } = new URL(req.url);
     const statusParam = searchParams.get("status");
-    const limitParam = Number(searchParams.get("limit") ?? "200");
     const status = isPaymentStatus(statusParam) ? statusParam : undefined;
-    const limit = Number.isFinite(limitParam) ? limitParam : 200;
-    const orders = await listAppOrders({ status, limit });
+    const limit = parseBoundedInt(searchParams.get("limit"), 200, 1, 1000);
+    const days = parseBoundedInt(searchParams.get("days"), 0, 0, 30);
+    const cleanup = searchParams.get("cleanup") === "true";
+    const createdAfter =
+      days > 0 ? new Date(Date.now() - days * 24 * 60 * 60 * 1000) : undefined;
+
+    if (cleanup && createdAfter) {
+      await deleteAppOrdersOlderThan(createdAfter);
+    }
+
+    const orders = await listAppOrders({ status, limit, createdAfter });
     return NextResponse.json(orders);
   } catch (error) {
     console.error("API /api/orders GET error:", error);
@@ -82,6 +107,9 @@ export async function POST(req: Request) {
 
     const appOrder = parseOrderRecord(body);
     if (appOrder) {
+      await deleteAppOrdersOlderThan(
+        new Date(Date.now() - APP_ORDER_RETENTION_DAYS * 24 * 60 * 60 * 1000),
+      );
       const saved = await upsertAppOrder(appOrder);
       return NextResponse.json(saved, { status: 201 });
     }

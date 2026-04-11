@@ -32,7 +32,7 @@ export function FoodCard({ title, subtitle, qty, onQtyChange }: FoodCardProps) {
               : "border-white/10 bg-white/5 text-[#f4efe8]/60",
           )}
         >
-          {qty > 0 ? `${qty} сонгосон` : "Ready"}
+          {qty}
         </div>
       </div>
 

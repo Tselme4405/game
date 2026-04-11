@@ -1,15 +1,26 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useEffect, useRef, useState } from "react";
-import { EmptyState } from "@/components/empty-state";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { PageShell } from "@/components/page-shell";
 import { MENU_ITEMS } from "@/lib/constants";
 import { isNormalStudentSession } from "@/lib/guards";
-import { clearActiveOrderId, clearCart, createOrder, getCart, getSession, setActiveOrderId, upsertOrder } from "@/lib/storage";
-import type { BonumEnvironment, Cart, OrderRecord, PaymentStatus, Session } from "@/lib/types";
-
-type CopyField = "iban" | "accountNumber" | "accountName";
+import {
+  clearActiveOrderId,
+  clearCart,
+  createOrder,
+  getCart,
+  getSession,
+  setActiveOrderId,
+  upsertOrder,
+} from "@/lib/storage";
+import type {
+  BonumEnvironment,
+  Cart,
+  OrderRecord,
+  PaymentStatus,
+  Session,
+} from "@/lib/types";
 
 interface BonumLink {
   name: string;
@@ -26,7 +37,7 @@ interface BonumQrData {
   invoiceId: string;
   transactionId: string;
   links: BonumLink[];
-  expiresAt: number; // Date.now() + expiresIn * 1000
+  expiresAt: number;
 }
 
 type OrderStatusResponse = OrderRecord & {
@@ -64,22 +75,18 @@ function getPaymentStatusCopy(status: PaymentStatus) {
   switch (status) {
     case "approved":
       return {
-        title: "Төлсөнд баярлалаа",
-        subtitle: "Таны төлбөр амжилттай баталгаажлаа.",
-        tone: "border-emerald-700/40 bg-emerald-950/30 text-emerald-100",
+        title: "Төлбөр амжилттай орлоо",
+        subtitle: "Захиалга шууд баталгаажсан.",
+        tone: "border-emerald-500/30 bg-emerald-500/10 text-emerald-50",
       };
     case "rejected":
       return {
         title: "Төлбөр амжилтгүй боллоо",
-        subtitle: "Гүйлгээ төлөгдөөгүй эсвэл цуцлагдсан байна.",
-        tone: "border-rose-700/40 bg-rose-950/30 text-rose-100",
+        subtitle: "QR-ээ шинэчлээд дахин оролдоно уу.",
+        tone: "border-rose-500/30 bg-rose-500/10 text-rose-50",
       };
     default:
-      return {
-        title: "Төлбөрийг автоматаар шалгаж байна",
-        subtitle: "Гүйлгээ ормогц энэ хэсэг шууд шинэчлэгдэнэ.",
-        tone: "border-emerald-700/40 bg-emerald-950/20 text-emerald-100",
-      };
+      return null;
   }
 }
 
@@ -87,28 +94,51 @@ export default function AccountPage() {
   const router = useRouter();
   const [session] = useState<Session | null>(getSession());
   const [cart] = useState<Cart>(getCart());
-  const [submitting, setSubmitting] = useState(false);
-  const [copiedField, setCopiedField] = useState<CopyField | null>(null);
-  const [submitError, setSubmitError] = useState("");
   const [qrData, setQrData] = useState<BonumQrData | null>(null);
   const [qrLoading, setQrLoading] = useState(false);
   const [qrError, setQrError] = useState("");
   const [countdown, setCountdown] = useState(0);
   const countdownRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const qrRequestRef = useRef(0);
+  const autoQrStartedRef = useRef(false);
   const qrOrderId = qrData?.orderId ?? null;
   const qrPaymentStatus = qrData?.status ?? null;
+  const hasValidSession = !!session && isNormalStudentSession(session);
+
+  const selectedItems = MENU_ITEMS.filter((item) => (cart.items[item.id] ?? 0) > 0).map(
+    (item) => ({
+      itemId: item.id,
+      name: item.name,
+      qty: cart.items[item.id] ?? 0,
+      price: item.price,
+    }),
+  );
+  const totalQuantity = selectedItems.reduce((sum, item) => sum + item.qty, 0);
+  const totalPayment = selectedItems.reduce((sum, item) => sum + item.qty * item.price, 0);
+  const actionableLinks = qrData ? getActionableBonumLinks(qrData.links) : [];
+  const isTestMode = qrData?.environment === "test";
+  const showPaymentAppLinks = actionableLinks.length > 0 && !isTestMode;
+  const paymentStatusCopy = getPaymentStatusCopy(qrData?.status ?? "pending");
 
   useEffect(() => {
     if (!qrData) return;
+
     const tick = () => {
       const secs = Math.max(0, Math.round((qrData.expiresAt - Date.now()) / 1000));
       setCountdown(secs);
-      if (secs === 0 && countdownRef.current) clearInterval(countdownRef.current);
+      if (secs === 0 && countdownRef.current) {
+        clearInterval(countdownRef.current);
+      }
     };
+
     tick();
     countdownRef.current = setInterval(tick, 1000);
-    return () => { if (countdownRef.current) clearInterval(countdownRef.current); };
+
+    return () => {
+      if (countdownRef.current) {
+        clearInterval(countdownRef.current);
+      }
+    };
   }, [qrData]);
 
   useEffect(() => {
@@ -179,88 +209,15 @@ export default function AccountPage() {
     };
   }, [qrOrderId, qrPaymentStatus]);
 
-  if (typeof window === "undefined") {
-    return null;
-  }
-
-  if (!session) {
-    router.replace("/");
-    return null;
-  }
-
-  if (!isNormalStudentSession(session)) {
-    router.replace("/");
-    return null;
-  }
-
-  if (cart.totalCount <= 0) {
-    router.replace("/select");
-    return null;
-  }
-
-  const selectedItems = MENU_ITEMS.filter((item) => (cart.items[item.id] ?? 0) > 0).map(
-    (item) => ({
-      itemId: item.id,
-      name: item.name,
-      qty: cart.items[item.id] ?? 0,
-      price: item.price,
-    }),
-  );
-  const totalQuantity = selectedItems.reduce((sum, item) => sum + item.qty, 0);
-  const totalPayment = selectedItems.reduce((sum, item) => sum + item.qty * item.price, 0);
-  const actionableLinks = qrData ? getActionableBonumLinks(qrData.links) : [];
-  const isTestMode = qrData?.environment === "test";
-  const showPaymentAppLinks = actionableLinks.length > 0 && !isTestMode;
-  const paymentStatusCopy = getPaymentStatusCopy(qrData?.status ?? "pending");
-
-  async function handlePaid() {
-    if (!session || selectedItems.length === 0 || submitting) return;
-
-    setSubmitError("");
-    setSubmitting(true);
-
-    const localOrder = createOrder({
-      userName: session.name,
-      classNumber: session.classNumber,
-      role: session.role,
-      items: selectedItems,
-      totalCount: cart.totalCount,
-      status: "pending",
-    });
-
-    try {
-      const response = await fetch("/api/orders", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(localOrder),
-      });
-
-      if (!response.ok) {
-        const message = await response.text().catch(() => "");
-        throw new Error(message || "Захиалга хадгалж чадсангүй");
-      }
-
-      setActiveOrderId(localOrder.id);
-      clearCart();
-      router.push("/waiting");
-    } catch (error) {
-      setSubmitting(false);
-      setSubmitError(error instanceof Error ? error.message : "Алдаа гарлаа");
-    }
-  }
-
-  async function handleBonumQr() {
+  const handleBonumQr = useCallback(async () => {
     if (!session || selectedItems.length === 0 || qrLoading) return;
+
     const requestId = qrRequestRef.current + 1;
     qrRequestRef.current = requestId;
-
-    // Always discard any previous QR so a fresh invoice is shown
-    setQrData(null);
     setQrError("");
     setQrLoading(true);
 
     try {
-      // Get QR first so we have invoiceId before saving the order
       const qrRes = await fetch("/api/bonum/create-qr", {
         method: "POST",
         cache: "no-store",
@@ -285,11 +242,10 @@ export default function AccountPage() {
 
       if (environment === "test" && actionableQrLinks.length === 0) {
         throw new Error(
-          "Test QR generated, but no supported app links returned. Энэ нь Bonum test terminal тохиргоо дутуу байгааг илтгэж магадгүй."
+          "Test QR generated, but no supported app links returned. Энэ нь Bonum test terminal тохиргоо дутуу байгааг илтгэж магадгүй.",
         );
       }
 
-      // Save order with Bonum IDs so the webhook can match it later
       const localOrder = createOrder({
         userName: session.name,
         classNumber: session.classNumber,
@@ -310,8 +266,8 @@ export default function AccountPage() {
       });
 
       if (!orderRes.ok) {
-        const msg = await orderRes.text().catch(() => "");
-        throw new Error(msg || "Захиалга хадгалж чадсангүй");
+        const message = await orderRes.text().catch(() => "");
+        throw new Error(message || "Захиалга хадгалж чадсангүй");
       }
 
       const savedOrder = (await orderRes.json()) as OrderRecord;
@@ -328,145 +284,135 @@ export default function AccountPage() {
       });
       setActiveOrderId(savedOrder.id);
       clearCart();
-    } catch (err) {
+    } catch (error) {
       if (requestId === qrRequestRef.current) {
-        setQrError(err instanceof Error ? err.message : "Алдаа гарлаа");
+        setQrError(error instanceof Error ? error.message : "Алдаа гарлаа");
       }
     } finally {
       if (requestId === qrRequestRef.current) {
         setQrLoading(false);
       }
     }
-  }
+  }, [cart.totalCount, qrLoading, selectedItems, session, totalPayment]);
 
-  async function handleCopy(field: CopyField, value: string) {
-    try {
-      await navigator.clipboard.writeText(value);
-      setCopiedField(field);
-      window.setTimeout(() => {
-        setCopiedField((current) => (current === field ? null : current));
-      }, 1400);
-    } catch {
-      setCopiedField(null);
+  useEffect(() => {
+    if (selectedItems.length === 0 || qrData || qrLoading || autoQrStartedRef.current) {
+      return;
     }
-  }
 
-  const glassCard =
-    "rounded-[2rem] border border-white/10 bg-black/35 p-5 shadow-[0_22px_60px_rgba(0,0,0,0.28)] backdrop-blur-2xl sm:p-6";
-  const panelCard = "rounded-[1.5rem] border border-white/10 bg-white/5 p-4";
-  const subtleRow =
-    "flex flex-col items-start justify-between gap-3 rounded-[1.25rem] border border-white/10 bg-black/30 px-4 py-3 sm:flex-row sm:items-center";
-  const copyButton =
-    "rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-[11px] font-bold uppercase tracking-[0.2em] text-[#f4efe8]/78 transition hover:border-white/20 hover:bg-white/10";
-  const secondaryButton =
-    "rounded-[1.2rem] border border-white/10 bg-white/5 px-4 py-3 text-sm font-semibold text-[#f4efe8] transition hover:border-white/20 hover:bg-white/10";
+    autoQrStartedRef.current = true;
+    void handleBonumQr();
+  }, [handleBonumQr, qrData, qrLoading, selectedItems.length]);
+
   const primaryButton =
     "rounded-[1.2rem] bg-[#43f0c1] px-4 py-3 text-sm font-extrabold text-[#04110d] shadow-[0_18px_36px_rgba(67,240,193,0.26)] transition hover:-translate-y-0.5 hover:bg-[#61f4ce]";
+  const secondaryButton =
+    "rounded-[1.2rem] border border-white/10 bg-white/5 px-4 py-3 text-sm font-semibold text-[#f4efe8] transition hover:border-white/20 hover:bg-white/10";
+  const panelCard = "rounded-[1.5rem] border border-white/10 bg-black/30 p-4 sm:p-5";
+  const outerTone =
+    qrData?.status === "approved"
+      ? "border-emerald-500/35 bg-emerald-950/18"
+      : qrData?.status === "rejected"
+        ? "border-rose-500/25 bg-rose-950/12"
+        : "border-white/10 bg-black/35";
+
+  if (typeof window === "undefined") {
+    return null;
+  }
+
+  if (!hasValidSession) {
+    router.replace("/");
+    return null;
+  }
+
+  if (cart.totalCount <= 0) {
+    router.replace("/select");
+    return null;
+  }
 
   return (
-    <PageShell title="Төлбөрийн хэсэг" subtitle="QR, банкны апп, эсвэл шилжүүлгээр төлөөд төлөв нь автоматаар шинэчлэгдэнэ.">
-      <div className="grid gap-6 xl:grid-cols-[340px_minmax(0,1fr)]">
-        <aside className="order-2 space-y-4 xl:order-1">
-          <section className={glassCard}>
-            <p className="text-[11px] font-extrabold uppercase tracking-[0.3em] text-[#43f0c1]">
-              Student
-            </p>
-            <h2 className="mt-3 text-2xl font-bold text-[#f4efe8]">{session.name}</h2>
-            <p className="mt-1 text-sm text-[#f4efe8]/68">Анги: {session.classNumber}</p>
+    <PageShell title="Төлбөрийн хэсэг" subtitle="QR эсвэл банкны апп-аар төлнө.">
+      <section
+        className={`rounded-[2rem] border p-5 shadow-[0_22px_60px_rgba(0,0,0,0.28)] backdrop-blur-2xl sm:p-6 ${outerTone}`}
+      >
+        <div className="grid gap-6 xl:grid-cols-[320px_minmax(0,1fr)]">
+          <aside className="space-y-4">
+            <section className={panelCard}>
+              <p className="text-[11px] font-extrabold uppercase tracking-[0.3em] text-[#43f0c1]">
+                Profile
+              </p>
+              <h2 className="mt-3 text-2xl font-bold text-[#f4efe8]">{session.name}</h2>
+              <p className="mt-1 text-sm text-[#f4efe8]/68">Анги: {session.classNumber}</p>
 
-            <div className="mt-5 grid gap-3">
-              <div className={panelCard}>
-                <p className="text-[11px] font-bold uppercase tracking-[0.24em] text-[#f4efe8]/52">
-                  Нийт ширхэг
-                </p>
-                <p className="mt-2 text-3xl font-black text-[#f4efe8]">{totalQuantity}</p>
+              <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-1">
+                <div className="rounded-[1.4rem] border border-white/10 bg-white/5 p-4">
+                  <p className="text-[11px] font-bold uppercase tracking-[0.24em] text-[#f4efe8]/52">
+                    Нийт ширхэг
+                  </p>
+                  <p className="mt-2 text-3xl font-black text-[#f4efe8]">{totalQuantity}</p>
+                </div>
+
+                <div className="rounded-[1.4rem] border border-[#43f0c1]/20 bg-[#43f0c1]/8 p-4">
+                  <p className="text-[11px] font-bold uppercase tracking-[0.24em] text-[#baffef]">
+                    Нийт дүн
+                  </p>
+                  <p className="mt-2 text-3xl font-black text-[#baffef]">{formatMoney(totalPayment)}</p>
+                </div>
               </div>
+            </section>
 
-              <div className="rounded-[1.5rem] border border-[#43f0c1]/20 bg-[#43f0c1]/8 p-4">
-                <p className="text-[11px] font-bold uppercase tracking-[0.24em] text-[#baffef]">
-                  Нийт төлөх дүн
-                </p>
-                <p className="mt-2 text-3xl font-black text-[#baffef]">{formatMoney(totalPayment)}</p>
-              </div>
-            </div>
-          </section>
-
-          <section className={glassCard}>
-            <div className="flex items-start justify-between gap-3">
-              <div>
-                <p className="text-[11px] font-extrabold uppercase tracking-[0.3em] text-[#43f0c1]">
-                  Basket
-                </p>
-                <h3 className="mt-3 text-xl font-bold text-[#f4efe8]">Сонгосон зүйлс</h3>
-              </div>
-              <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs font-semibold text-[#f4efe8]/72">
-                {selectedItems.length} төрөл
-              </span>
-            </div>
-
-            <div className="mt-5 space-y-3">
-              {selectedItems.length > 0 ? (
-                selectedItems.map((item) => {
-                  const lineTotal = item.qty * item.price;
-
-                  return (
-                    <div key={item.itemId} className={panelCard}>
-                      <div className="flex flex-wrap items-center justify-between gap-2">
-                        <p className="text-sm font-semibold text-[#f4efe8]">{item.name}</p>
-                        <p className="text-sm font-bold text-[#baffef]">{formatMoney(lineTotal)}</p>
-                      </div>
-                      <div className="mt-2 grid gap-1 text-xs text-[#f4efe8]/62">
-                        <p>Тоо ширхэг: {item.qty} ш</p>
-                        <p>Нэгж үнэ: {formatMoney(item.price)}</p>
-                      </div>
+            <section className={panelCard}>
+              <p className="text-[11px] font-extrabold uppercase tracking-[0.3em] text-[#43f0c1]">
+                Захиалга
+              </p>
+              <div className="mt-4 space-y-3">
+                {selectedItems.map((item) => (
+                  <div
+                    key={item.itemId}
+                    className="rounded-[1.25rem] border border-white/10 bg-white/5 px-4 py-3"
+                  >
+                    <div className="flex items-center justify-between gap-3">
+                      <p className="text-sm font-semibold text-[#f4efe8]">{item.name}</p>
+                      <p className="text-sm font-bold text-[#baffef]">
+                        {formatMoney(item.qty * item.price)}
+                      </p>
                     </div>
-                  );
-                })
-              ) : (
-                <EmptyState title="Хоосон байна" subtitle="Сонгосон зүйл алга." />
-              )}
-            </div>
-          </section>
-        </aside>
+                    <p className="mt-2 text-xs text-[#f4efe8]/62">
+                      {item.qty} ш x {formatMoney(item.price)}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            </section>
+          </aside>
 
-        <section className="order-1 space-y-4 xl:order-2">
-          <section className={glassCard}>
+          <section className={panelCard}>
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div>
                 <p className="text-[11px] font-extrabold uppercase tracking-[0.3em] text-[#43f0c1]">
-                  Payment
+                  QR төлбөр
                 </p>
-                <h2 className="mt-3 text-2xl font-bold text-[#f4efe8]">QR эсвэл банкны аппаар төлөх</h2>
-                <p className="mt-2 max-w-2xl text-sm leading-6 text-[#f4efe8]/72">
-                  QR үүсмэгц утсаараа уншуулж эсвэл банкны аппын товчоор нээгээд төлнө. Төлөв
-                  амжилттай ормогц энэ хуудас өөрөө шинэчлэгдэнэ.
+                <h2 className="mt-3 text-2xl font-bold text-[#f4efe8]">
+                  QR эсвэл банкны апп-аар төлөх
+                </h2>
+                <p className="mt-2 text-sm leading-6 text-[#f4efe8]/72">
+                  QR гармагц утсаараа уншуулж эсвэл банкны аппын товчоор төлнө.
                 </p>
               </div>
 
-              <div className="rounded-full border border-[#43f0c1]/20 bg-[#43f0c1]/10 px-4 py-2 text-xs font-bold uppercase tracking-[0.24em] text-[#baffef]">
-                realtime status
-              </div>
+              {qrData?.status === "pending" && (
+                <div className="rounded-full border border-white/10 bg-white/5 px-4 py-2 text-sm font-mono text-[#f4efe8]">
+                  {countdown > 0
+                    ? `${Math.floor(countdown / 60)}:${String(countdown % 60).padStart(2, "0")}`
+                    : "Хугацаа дууссан"}
+                </div>
+              )}
             </div>
 
-            {!qrData && (
-              <div className="mt-5 flex flex-col gap-3 sm:flex-row">
-                <button
-                  type="button"
-                  onClick={handleBonumQr}
-                  disabled={qrLoading || selectedItems.length === 0}
-                  className={`flex-1 ${primaryButton} disabled:cursor-not-allowed disabled:opacity-50`}
-                >
-                  {qrLoading ? "QR үүсгэж байна..." : "QR болон аппын төлбөр эхлүүлэх"}
-                </button>
-
-                <button
-                  type="button"
-                  onClick={handlePaid}
-                  disabled={submitting || selectedItems.length === 0}
-                  className={`flex-1 ${secondaryButton} disabled:cursor-not-allowed disabled:opacity-50`}
-                >
-                  {submitting ? "Илгээж байна..." : "Шилжүүлгээр төлсөн"}
-                </button>
+            {paymentStatusCopy && (
+              <div className={`mt-5 rounded-[1.5rem] border p-4 ${paymentStatusCopy.tone}`}>
+                <p className="text-lg font-bold">{paymentStatusCopy.title}</p>
+                <p className="mt-2 text-sm leading-6 opacity-90">{paymentStatusCopy.subtitle}</p>
               </div>
             )}
 
@@ -476,146 +422,63 @@ export default function AccountPage() {
               </div>
             )}
 
-            {submitError && (
-              <div className="mt-4 rounded-[1.5rem] border border-rose-500/30 bg-rose-500/10 p-4 text-sm text-rose-100">
-                {submitError}
-              </div>
-            )}
-          </section>
-
-          <section className={glassCard}>
-            <div className="flex flex-wrap items-start justify-between gap-3">
-              <div>
-                <p className="text-[11px] font-extrabold uppercase tracking-[0.3em] text-[#43f0c1]">
-                  Bank Details
+            {!qrData && (
+              <div className="mt-5 rounded-[1.75rem] border border-white/10 bg-black/25 p-5 text-center">
+                <p className="text-sm font-semibold text-[#f4efe8]">
+                  {qrLoading ? "QR үүсгэж байна..." : "QR бэлдээгүй байна."}
                 </p>
-                <h3 className="mt-3 text-xl font-bold text-[#f4efe8]">Шилжүүлгийн мэдээлэл</h3>
-              </div>
-
-              <div className="rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-xs font-semibold text-[#f4efe8]/72">
-                Khan Bank
-              </div>
-            </div>
-
-            <div className="mt-5 grid gap-3">
-              <div className={subtleRow}>
-                <span className="text-sm font-semibold text-[#f4efe8]/72">Банк</span>
-                <span className="text-sm font-semibold text-[#f4efe8]">Khan Bank</span>
-              </div>
-
-              <div className={subtleRow}>
-                <span className="text-sm font-semibold text-[#f4efe8]/72">IBAN</span>
-                <div className="flex items-center gap-2">
-                  <span className="font-mono text-sm font-medium text-[#f4efe8]">9200500</span>
-                  <button type="button" onClick={() => handleCopy("iban", "9200500")} className={copyButton}>
-                    {copiedField === "iban" ? "Хуулсан" : "Хуулах"}
-                  </button>
-                </div>
-              </div>
-
-              <div className={subtleRow}>
-                <span className="text-sm font-semibold text-[#f4efe8]/72">Дансны дугаар</span>
-                <div className="flex items-center gap-2">
-                  <span className="font-mono text-sm font-medium text-[#f4efe8]">5217172741</span>
+                {!qrLoading && (
                   <button
                     type="button"
-                    onClick={() => handleCopy("accountNumber", "5217172741")}
-                    className={copyButton}
+                    onClick={handleBonumQr}
+                    className={`mt-4 ${primaryButton}`}
                   >
-                    {copiedField === "accountNumber" ? "Хуулсан" : "Хуулах"}
+                    QR үүсгэх
                   </button>
-                </div>
-              </div>
-
-              <div className={subtleRow}>
-                <span className="text-sm font-semibold text-[#f4efe8]/72">Данс эзэмшигч</span>
-                <div className="flex items-center gap-2">
-                  <span className="text-sm font-medium text-[#f4efe8]">Tselmeg</span>
-                  <button
-                    type="button"
-                    onClick={() => handleCopy("accountName", "Tselmeg")}
-                    className={copyButton}
-                  >
-                    {copiedField === "accountName" ? "Хуулсан" : "Хуулах"}
-                  </button>
-                </div>
-              </div>
-            </div>
-          </section>
-
-          {qrData ? (
-            <section className={`${glassCard} ${paymentStatusCopy.tone}`}>
-              <div className="flex w-full flex-wrap items-start justify-between gap-3">
-                <div>
-                  <p className="text-[11px] font-extrabold uppercase tracking-[0.3em] text-[#43f0c1]">
-                    Live Status
-                  </p>
-                  <h3 className="mt-3 text-2xl font-bold text-[#f4efe8]">
-                    {isTestMode ? "Test горимын төлбөр" : paymentStatusCopy.title}
-                  </h3>
-                  <p className="mt-2 text-sm leading-6 text-[#f4efe8]/72">{paymentStatusCopy.subtitle}</p>
-                </div>
-
-                {qrData.status === "pending" && (
-                  <div className="rounded-full border border-white/10 bg-white/5 px-4 py-2 text-sm font-mono text-[#f4efe8]">
-                    {countdown > 0
-                      ? `${Math.floor(countdown / 60)}:${String(countdown % 60).padStart(2, "0")}`
-                      : "Хугацаа дууссан"}
-                  </div>
                 )}
               </div>
+            )}
 
-              {isTestMode && (
-                <div className="mt-5 rounded-[1.5rem] border border-amber-500/30 bg-amber-500/10 p-4 text-left">
-                  <div className="flex items-center justify-between gap-3">
-                    <p className="text-sm font-bold uppercase tracking-[0.2em] text-amber-200">Test Mode</p>
-                    <span className="rounded-full border border-amber-400/30 px-2 py-1 text-[10px] font-semibold text-amber-100">
-                      SANDBOX
-                    </span>
+            {qrData && (
+              <>
+                {isTestMode && (
+                  <div className="mt-5 rounded-[1.5rem] border border-amber-500/30 bg-amber-500/10 p-4 text-sm leading-6 text-amber-100">
+                    Энэ QR нь test горимынх тул live банкны апп дээр ажиллахгүй байж магадгүй.
                   </div>
-                  <p className="mt-2 text-sm leading-6 text-amber-100">
-                    Энэ QR нь sandbox invoice тул банкны live app, QR scanner, эсвэл deeplink-р
-                    төлөхөд хүчингүй гэж гарна. Жинхэнэ төлбөр ажиллуулахын тулд Bonum-ийн production
-                    credential хэрэгтэй.
-                  </p>
-                </div>
-              )}
+                )}
 
-              {qrData.status === "approved" ? (
-                <div className="mt-5 rounded-[1.75rem] border border-emerald-500/30 bg-emerald-500/10 p-6 text-center">
-                  <p className="text-5xl font-black text-emerald-300">OK</p>
-                  <p className="mt-3 text-lg font-bold text-emerald-100">Төлсөнд баярлалаа</p>
-                  <p className="mt-2 text-sm text-emerald-50/90">
-                    Захиалга тань амжилттай бүртгэгдлээ. Энэ хэсэг real-time шинэчлэгдсэн болно.
-                  </p>
-                </div>
-              ) : null}
-
-              {showPaymentAppLinks && qrData.status === "pending" && (
-                <div className="mt-5">
-                  <p className="mb-3 text-[11px] font-extrabold uppercase tracking-[0.3em] text-[#43f0c1]">
-                    Bank Apps
-                  </p>
-                  <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-                    {actionableLinks.map((item) => (
-                      <a
-                        key={item.name}
-                        href={getBonumLinkHref(item)}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="flex min-h-[92px] flex-col items-center justify-center gap-2 rounded-[1.5rem] border border-white/10 bg-black/30 px-3 py-4 text-center transition hover:border-white/20 hover:bg-black/40"
-                      >
-                        {item.logo && (
-                          <img src={item.logo} alt={item.name} width={36} height={36} className="rounded-lg" />
-                        )}
-                        <span className="text-xs font-semibold leading-5 text-[#f4efe8]">{item.name}</span>
-                      </a>
-                    ))}
+                {showPaymentAppLinks && qrData.status === "pending" && (
+                  <div className="mt-5">
+                    <p className="mb-3 text-[11px] font-extrabold uppercase tracking-[0.3em] text-[#43f0c1]">
+                      Банкны апп
+                    </p>
+                    <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+                      {actionableLinks.map((item) => (
+                        <a
+                          key={item.name}
+                          href={getBonumLinkHref(item)}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="flex min-h-[92px] flex-col items-center justify-center gap-2 rounded-[1.5rem] border border-white/10 bg-black/30 px-3 py-4 text-center transition hover:border-white/20 hover:bg-black/40"
+                        >
+                          {item.logo && (
+                            <img
+                              src={item.logo}
+                              alt={item.name}
+                              width={36}
+                              height={36}
+                              className="rounded-lg"
+                            />
+                          )}
+                          <span className="text-xs font-semibold leading-5 text-[#f4efe8]">
+                            {item.name}
+                          </span>
+                        </a>
+                      ))}
+                    </div>
                   </div>
-                </div>
-              )}
+                )}
 
-              {qrData.status !== "approved" && (
                 <div className="mt-5 grid gap-4 lg:grid-cols-[260px_minmax(0,1fr)]">
                   <div className="flex flex-col items-center gap-3 rounded-[1.75rem] border border-white/10 bg-black/30 p-4 sm:p-5">
                     <img
@@ -626,89 +489,49 @@ export default function AccountPage() {
                       height={220}
                       className="h-auto w-full max-w-[220px] rounded-[1.25rem]"
                     />
-                    <p className="break-all text-center text-xs text-[#f4efe8]/52">Invoice: {qrData.invoiceId}</p>
                   </div>
 
                   <div className="rounded-[1.75rem] border border-white/10 bg-black/30 p-4 sm:p-5">
                     <p className="text-sm leading-7 text-[#f4efe8]/72">
-                      {isTestMode
-                        ? "Лавлах зорилгоор харуулж байна. Test mode дээр scanner-ээр бүү уншуул."
-                        : qrData.status === "pending"
-                          ? "Desktop дээр энэ хуудсыг нээлттэй орхиод утсаараа QR уншуулж эсвэл дээрх банкны аппын товчоор төлнө. Амжилттай төлөгдвөл энэ card шууд ногоон төлөвт шилжинэ."
-                          : "Энэ invoice төлөгдөөгүй байна. Шинээр QR үүсгээд дахин оролдоно уу."}
+                      {qrData.status === "approved"
+                        ? "Төлбөр орсон тул захиалга шууд баталгаажсан."
+                        : qrData.status === "rejected"
+                          ? "Төлбөр амжилтгүй болсон байна. QR-ээ шинэчлээд дахин оролдоно уу."
+                          : "Төлбөр хийсний дараа захиалга шууд баталгаажна."}
                     </p>
 
                     <div className="mt-5 flex flex-col gap-3 sm:flex-row">
-                      <button
-                        type="button"
-                        onClick={handleBonumQr}
-                        disabled={qrLoading}
-                        className={`sm:flex-1 ${secondaryButton} disabled:opacity-50`}
-                      >
-                        {qrLoading ? "..." : qrData.status === "rejected" ? "QR дахин үүсгэх" : "QR шинэчлэх"}
-                      </button>
+                      {qrData.status !== "approved" && (
+                        <button
+                          type="button"
+                          onClick={handleBonumQr}
+                          disabled={qrLoading}
+                          className={`sm:flex-1 ${secondaryButton} disabled:cursor-not-allowed disabled:opacity-50`}
+                        >
+                          {qrLoading ? "QR шинэчилж байна..." : "QR шинэчлэх"}
+                        </button>
+                      )}
 
-                      <button
-                        type="button"
-                        onClick={() => router.push("/waiting")}
-                        className={`sm:flex-1 ${primaryButton}`}
-                      >
-                        Төлөвийн дэлгэрэнгүй
-                      </button>
+                      {qrData.status === "approved" && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            clearActiveOrderId();
+                            router.push("/select");
+                          }}
+                          className={`sm:flex-1 ${primaryButton}`}
+                        >
+                          Шинэ захиалга хийх
+                        </button>
+                      )}
                     </div>
                   </div>
                 </div>
-              )}
-
-              {qrData.status === "approved" && (
-                <div className="mt-5 flex flex-col gap-3 sm:flex-row">
-                  <button
-                    type="button"
-                    onClick={() => router.push("/waiting")}
-                    className={`sm:flex-1 ${secondaryButton}`}
-                  >
-                    Төлөвийн хуудас харах
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      clearActiveOrderId();
-                      router.push("/select");
-                    }}
-                    className={`sm:flex-1 ${primaryButton}`}
-                  >
-                    Шинэ захиалга хийх
-                  </button>
-                </div>
-              )}
-            </section>
-          ) : null}
-        </section>
-      </div>
-
-      {!qrData && (
-        <div className="sticky bottom-3 z-20 -mx-1 mt-6 rounded-[1.5rem] border border-white/10 bg-black/70 p-3 shadow-[0_22px_60px_rgba(0,0,0,0.32)] backdrop-blur-2xl sm:hidden">
-          <div className="grid grid-cols-2 gap-3">
-            <button
-              type="button"
-              onClick={handleBonumQr}
-              disabled={qrLoading || selectedItems.length === 0}
-              className={`${primaryButton} w-full disabled:cursor-not-allowed disabled:opacity-50`}
-            >
-              {qrLoading ? "Уншиж байна..." : "QR төлбөр"}
-            </button>
-
-            <button
-              type="button"
-              onClick={handlePaid}
-              disabled={submitting || selectedItems.length === 0}
-              className={`${secondaryButton} w-full disabled:cursor-not-allowed disabled:opacity-50`}
-            >
-              {submitting ? "..." : "Шилжүүлэг"}
-            </button>
-          </div>
+              </>
+            )}
+          </section>
         </div>
-      )}
+      </section>
     </PageShell>
   );
 }

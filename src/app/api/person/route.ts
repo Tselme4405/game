@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { normalizeSessionName, validateClassNumber, validateSessionName } from "@/lib/session-validation";
 import { insertUser, type UserRole } from "@/lib/server/neon";
 
 function parseRole(value: unknown): UserRole | null {
@@ -14,15 +15,17 @@ function parseRole(value: unknown): UserRole | null {
 export async function POST(req: Request) {
   try {
     const body = await req.json();
-    const name = String(body.name ?? "").trim();
+    const name = normalizeSessionName(String(body.name ?? ""));
     const role = parseRole(body.role);
     const classNumberRaw =
       body.class_number ?? body.classNumber ?? body.classCode ?? null;
     const classNumber =
       classNumberRaw == null ? null : String(classNumberRaw).trim();
+    const nameError = validateSessionName(name);
+    const classNumberError = role === "student" ? validateClassNumber(classNumber ?? "") : "";
 
-    if (!name) {
-      return new NextResponse("name required", { status: 400 });
+    if (nameError) {
+      return new NextResponse(nameError, { status: 400 });
     }
 
     if (!role) {
@@ -31,8 +34,8 @@ export async function POST(req: Request) {
       });
     }
 
-    if (role === "student" && !classNumber) {
-      return new NextResponse("class_number required", { status: 400 });
+    if (classNumberError) {
+      return new NextResponse(classNumberError, { status: 400 });
     }
 
     const saved = await insertUser({

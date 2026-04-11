@@ -21,6 +21,7 @@ export const STATUS_LABELS: Record<PaymentStatus, string> = {
   rejected: "Үгүйсгэсэн",
 };
 
-export const DELIVERY_TEACHER = {
-  name: "HurgeltiinHun",
+export const DELIVERY_ACCESS = {
+  classNumber: "333",
+  names: ["Hurgelt hun", "HurgeltiinHun"],
 } as const;

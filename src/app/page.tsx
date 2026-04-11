@@ -2,11 +2,9 @@
 
 import Script from "next/script";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
 import { AuthForm } from "@/components/auth-form";
-import { DELIVERY_TEACHER } from "@/lib/constants";
+import { isDeliveryCredentials } from "@/lib/guards";
 import { setSession } from "@/lib/storage";
-import type { EntryRole } from "@/lib/types";
 import { Cormorant_Garamond, Manrope } from "next/font/google";
 import styles from "./page.module.css";
 
@@ -23,12 +21,10 @@ const bodyFont = Manrope({
 
 export default function HomePage() {
   const router = useRouter();
-  const [role, setRole] = useState<EntryRole | null>(null);
-  const [teacherDenied, setTeacherDenied] = useState(false);
 
   async function saveUserToDb(input: {
     name: string;
-    classNumber?: string;
+    classNumber: string;
     role: "student" | "teacher";
   }) {
     const response = await fetch("/api/users", {
@@ -48,19 +44,16 @@ export default function HomePage() {
   }
 
   async function handleAuthSubmit(session: {
-    role: EntryRole;
     name: string;
-    classNumber?: string;
+    classNumber: string;
   }) {
-    setTeacherDenied(false);
-
-    if (session.role === "teacher") {
-      setSession(session);
-      if (session.name === DELIVERY_TEACHER.name) {
-        router.push("/delivery");
-      } else {
-        setTeacherDenied(true);
-      }
+    if (isDeliveryCredentials(session.name, session.classNumber)) {
+      setSession({
+        role: "teacher",
+        name: session.name,
+        classNumber: session.classNumber,
+      });
+      router.push("/delivery");
       return;
     }
 
@@ -124,53 +117,12 @@ export default function HomePage() {
           <div className={styles.accessDock} data-reveal>
             <div className={styles.accessHeader}>
               <p className={styles.sectionEyebrow}>Нэвтрэх</p>
-              <h2 className={styles.accessTitle}>Сурагч эсвэл багшийн эрхээ сонгоно уу</h2>
+              <h2 className={styles.accessTitle}>Нэр, ангиа оруулаад нэвтэрнэ үү</h2>
             </div>
 
-            <div className={styles.roleSwitch}>
-              <button
-                type="button"
-                className={styles.roleButton}
-                data-active={role === "student" ? "true" : "false"}
-                onClick={() => {
-                  setTeacherDenied(false);
-                  setRole("student");
-                }}
-              >
-                <span>Сурагч</span>
-                <small>Захиалга хийх</small>
-              </button>
-
-              <button
-                type="button"
-                className={styles.roleButton}
-                data-active={role === "teacher" ? "true" : "false"}
-                onClick={() => {
-                  setTeacherDenied(false);
-                  setRole("teacher");
-                }}
-              >
-                <span>Багш</span>
-                <small>Хүргэлт шалгах</small>
-              </button>
+            <div className={styles.authWrap}>
+              <AuthForm onSubmit={handleAuthSubmit} />
             </div>
-
-            {role ? (
-              <div className={styles.authWrap}>
-                <AuthForm role={role} onSubmit={handleAuthSubmit} />
-              </div>
-            ) : (
-              <p className={styles.accessHint}>
-                Дээрх хоёр товчийн аль нэгийг дарж үргэлжлүүлээрэй.
-              </p>
-            )}
-
-            {teacherDenied && (
-              <div className={styles.deniedCard}>
-                <p>Нэвтрэх эрхгүй байна</p>
-                <span>Энэ нэрээр хүргэлтийн хуудас руу нэвтрэх боломжгүй.</span>
-              </div>
-            )}
           </div>
         </div>
       </section>
