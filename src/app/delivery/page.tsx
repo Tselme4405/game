@@ -12,7 +12,7 @@ import type { OrderRecord } from "@/lib/types";
 
 const DELIVERY_WINDOW_DAYS = 7;
 const DELIVERY_TIME_ZONE = "Asia/Ulaanbaatar";
-const DELIVERY_SUMMARY_ITEMS = MENU_ITEMS.filter((item) => item.id !== "test_item");
+const DELIVERY_SUMMARY_ITEMS = MENU_ITEMS;
 
 const dayKeyFormatter = new Intl.DateTimeFormat("en-CA", {
   timeZone: DELIVERY_TIME_ZONE,

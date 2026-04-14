@@ -10,7 +10,6 @@ export const STORAGE_KEYS = {
 export const MENU_ITEMS: MenuItem[] = [
   { id: "mahtai_piroshki", name: "Махтай пирошки", subtitle: "Сонгоод тоо оруулна", price: 3500 },
   { id: "tomstoi_piroshki", name: "Төмстэй пирошки", subtitle: "Сонгоод тоо оруулна", price: 3500 },
-  { id: "test_item", name: "Тест", subtitle: "Төлбөр шалгах зориулалттай", price: 1 },
   { id: "mantuun_buuz", name: "Мантуун бууз", subtitle: "Сонгоод тоо оруулна", price: 3500 },
 ];
 
