@@ -104,20 +104,25 @@ export default function HomePage() {
               Pinecone-д зориулсан
             </p>
 
-            <h1 className={`${styles.heroTitle} ${displayFont.className}`} data-reveal>
-              Прешикийн хүргэлтийн website
+            <h1
+              className={`${styles.heroTitle} ${displayFont.className}`}
+              data-reveal
+            >
+              Пирошки хүргэлтийн website
             </h1>
 
             <p className={styles.heroBody} data-reveal>
-              Сурагчид захиалгаа хурдан өгч, багш нар хүргэлтээ нэг дэлгэцээс хянах
-              хялбар, ойлгомжтой систем.
+              Сурагчид захиалгаа хурдан өгч, багш нар хүргэлтээ нэг дэлгэцээс
+              хянах хялбар, ойлгомжтой систем.
             </p>
           </div>
 
           <div className={styles.accessDock} data-reveal>
             <div className={styles.accessHeader}>
               <p className={styles.sectionEyebrow}>Нэвтрэх</p>
-              <h2 className={styles.accessTitle}>Нэр, ангиа оруулаад нэвтэрнэ үү</h2>
+              <h2 className={styles.accessTitle}>
+                Нэр, ангиа оруулаад нэвтэрнэ үү
+              </h2>
             </div>
 
             <div className={styles.authWrap}>
