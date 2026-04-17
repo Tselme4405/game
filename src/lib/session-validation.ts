@@ -1,12 +1,10 @@
+import { CLASS_OPTIONS } from "@/lib/constants";
+
 const NAME_PATTERN = /^[\p{L}\s]+$/u;
-const CLASS_NUMBER_PATTERN = /^\d{3}$/;
+const ALLOWED_CLASS_VALUES = new Set<string>(CLASS_OPTIONS.map((option) => option.value));
 
 export function normalizeSessionName(value: string) {
   return value.replace(/\s+/g, " ").trim();
-}
-
-export function sanitizeClassNumberInput(value: string) {
-  return value.replace(/\D/g, "").slice(0, 3);
 }
 
 export function validateSessionName(value: string) {
@@ -27,11 +25,11 @@ export function validateClassNumber(value: string) {
   const normalized = String(value ?? "").trim();
 
   if (!normalized) {
-    return "Ангийн дугаараа оруулна уу";
+    return "Ангиа сонгоно уу";
   }
 
-  if (!CLASS_NUMBER_PATTERN.test(normalized)) {
-    return "Анги 3 оронтой тоо байна. Жишээ: 302";
+  if (!ALLOWED_CLASS_VALUES.has(normalized)) {
+    return "Жагсаалтаас ангиа сонгоно уу";
   }
 
   return "";

@@ -13,6 +13,18 @@ export const MENU_ITEMS: MenuItem[] = [
   { id: "mantuun_buuz", name: "Мантуун бууз", subtitle: "Сонгоод тоо оруулна", price: 3500 },
 ];
 
+export const CLASS_OPTIONS = [
+  { value: "301", label: "301" },
+  { value: "302", label: "302" },
+  { value: "303", label: "303" },
+  { value: "304", label: "304" },
+  { value: "305", label: "305" },
+  { value: "401", label: "401" },
+  { value: "402", label: "402" },
+  { value: "403", label: "403" },
+  { value: "Багш", label: "Багш" },
+] as const;
+
 export const STATUS_LABELS: Record<PaymentStatus, string> = {
   draft: "Ноорог",
   pending: "Хүлээгдэж буй",

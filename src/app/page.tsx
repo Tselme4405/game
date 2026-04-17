@@ -1,18 +1,12 @@
 "use client";
 
-import Script from "next/script";
+import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { AuthForm } from "@/components/auth-form";
 import { isDeliveryCredentials } from "@/lib/guards";
 import { setSession } from "@/lib/storage";
-import { Cormorant_Garamond, Manrope } from "next/font/google";
+import { Manrope } from "next/font/google";
 import styles from "./page.module.css";
-
-const displayFont = Cormorant_Garamond({
-  subsets: ["latin"],
-  weight: ["400", "500", "600", "700"],
-  style: ["normal", "italic"],
-});
 
 const bodyFont = Manrope({
   subsets: ["latin"],
@@ -73,57 +67,37 @@ export default function HomePage() {
 
   return (
     <main className={`${styles.page} ${bodyFont.className}`}>
-      <Script src="/agency-landing.js" strategy="afterInteractive" />
-
       <section className={styles.hero}>
-        <video
-          className={styles.heroVideo}
-          autoPlay
-          muted
-          loop
-          playsInline
-          preload="metadata"
-          poster="https://images.pexels.com/videos/3129957/free-video-3129957.jpg?auto=compress&cs=tinysrgb&fit=crop&h=1080&w=1920"
-        >
-          <source
-            src="https://videos.pexels.com/video-files/3129957/3129957-hd_1920_1080_25fps.mp4"
-            type="video/mp4"
-          />
-        </video>
+        <Image
+          className={styles.heroImage}
+          src="/hero-piroshki-table.png"
+          alt=""
+          fill
+          priority
+          sizes="100vw"
+        />
 
-        <div className={styles.heroGlow} />
+        <header className={styles.topbar}>
+          <div className={styles.brand}>
+            <span>Pinecone Delivery</span>
+          </div>
+
+          <div className={styles.topbarActions}>
+            <a href="#auth-form" className={styles.topbarButton}>
+              Захиалах
+            </a>
+          </div>
+        </header>
 
         <div className={styles.heroShell}>
           <div className={styles.heroContent}>
-            <div className={styles.brandBadge} data-reveal>
-              <span className={styles.wordmarkDot} />
-              <span>Pinecone Delivery</span>
-            </div>
-
-            <p className={styles.kicker} data-reveal>
-              Pinecone-д зориулсан
-            </p>
-
-            <h1
-              className={`${styles.heroTitle} ${displayFont.className}`}
-              data-reveal
-            >
-              Пирошки хүргэлтийн website
+            <h1 className={styles.heroHeadline}>
+              Ангидаа пирошки захиалаарай
             </h1>
 
-            <p className={styles.heroBody} data-reveal>
-              Сурагчид захиалгаа хурдан өгч, багш нар хүргэлтээ нэг дэлгэцээс
-              хянах хялбар, ойлгомжтой систем.
+            <p className={styles.heroBody}>
+              Ангиа сонгоод нэрээ бичээд шууд цэс рүү орно.
             </p>
-          </div>
-
-          <div className={styles.accessDock} data-reveal>
-            <div className={styles.accessHeader}>
-              <p className={styles.sectionEyebrow}>Нэвтрэх</p>
-              <h2 className={styles.accessTitle}>
-                Нэр, ангиа оруулаад нэвтэрнэ үү
-              </h2>
-            </div>
 
             <div className={styles.authWrap}>
               <AuthForm onSubmit={handleAuthSubmit} />
