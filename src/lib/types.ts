@@ -16,6 +16,10 @@ export type MenuItem = {
   name: string;
   subtitle: string;
   price: number;
+  kcal?: number;
+  tag?: string;
+  tone?: "warm" | "mint" | "berry" | "neutral";
+  image?: string;
 };
 
 export type Cart = {

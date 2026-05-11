@@ -1,13 +1,27 @@
 import BonumPayButton from "@/components/bonum-pay-button";
+import { Card, Eyebrow } from "@/components/ui-kit";
 
 export default function BonumTestPage() {
   return (
-    <main className="min-h-screen flex flex-col items-center justify-center gap-6 p-8">
-      <h1 className="text-2xl font-bold">Bonum QR Test</h1>
-      <p className="text-sm text-gray-500">
-        Доорх товчийг дарж QR код үүсгэнэ үү.
-      </p>
-      <BonumPayButton amount={1000} />
+    <main
+      style={{
+        minHeight: "100vh",
+        background: "var(--bg)",
+        display: "grid",
+        placeItems: "center",
+        padding: 24,
+      }}
+    >
+      <Card style={{ width: "100%", maxWidth: 460, textAlign: "center" }}>
+        <Eyebrow>Bonum QR Test</Eyebrow>
+        <h1 style={{ margin: "8px 0 6px", fontSize: 24, fontWeight: 800, letterSpacing: "-0.02em" }}>
+          QR төлбөр шалгах
+        </h1>
+        <p style={{ margin: "0 0 20px", fontSize: 13, color: "var(--muted)" }}>
+          Доорх товчийг дарж QR код үүсгэнэ үү.
+        </p>
+        <BonumPayButton amount={1000} />
+      </Card>
     </main>
   );
 }

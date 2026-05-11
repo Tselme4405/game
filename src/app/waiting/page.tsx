@@ -2,8 +2,8 @@
 
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
-import { PageShell } from "@/components/page-shell";
-import { StatusBadge } from "@/components/status-badge";
+import { Card, Eyebrow, FoodImage, Icon } from "@/components/ui-kit";
+import { MENU_ITEMS } from "@/lib/constants";
 import { isNormalStudentSession } from "@/lib/guards";
 import {
   clearActiveOrderId,
@@ -15,204 +15,323 @@ import {
 } from "@/lib/storage";
 import type { OrderRecord } from "@/lib/types";
 
-type OrderStatusResponse = OrderRecord & {
-  verificationError?: string | null;
-};
+type OrderStatusResponse = OrderRecord & { verificationError?: string | null };
 
-function getStatusCopy(status: OrderRecord["status"]) {
-  switch (status) {
-    case "approved":
-      return {
-        title: "Төлбөр амжилттай баталгаажлаа",
-        subtitle: "Таны захиалга төлөгдсөн гэж бүртгэгдлээ.",
-        tone: "border-emerald-700/40 bg-emerald-950/30 text-emerald-100",
-      };
-    case "rejected":
-      return {
-        title: "Төлбөр төлөгдөөгүй байна",
-        subtitle: "Гүйлгээ амжилтгүй болсон эсвэл хүчингүй болсон байна.",
-        tone: "border-rose-700/40 bg-rose-950/30 text-rose-100",
-      };
-    default:
-      return {
-        title: "Гүйлгээг шалгаж байна",
-        subtitle: "Төлбөрийн төлөв шинэчлэгдмэгц энд харагдана.",
-        tone: "border-neutral-800 bg-neutral-900/70 text-neutral-100",
-      };
-  }
-}
+const STEPS = [
+  { k: "Баталгаажсан", s: "Төлбөр орж, захиалга гал тогоонд орлоо.", icon: "check" as const },
+  { k: "Бэлтгэгдэж байна", s: "Пирошки шарагдаж байна. Халуухан хүрнэ.", icon: "flame" as const },
+  { k: "Хүргэлтэнд гарсан", s: "Ангидаа хүргэгдэж байна.", icon: "truck" as const },
+  { k: "Хүргэгдсэн", s: "Сайхан хооллоорой!", icon: "sparkle" as const },
+];
 
 export default function WaitingPage() {
   const router = useRouter();
   const [order, setOrder] = useState<OrderRecord | null>(() => {
-    const activeOrderId = getActiveOrderId();
-    return activeOrderId ? getOrderById(activeOrderId) : null;
+    const id = getActiveOrderId();
+    return id ? getOrderById(id) : null;
   });
-  const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [now, setNow] = useState(() => new Date());
+
+  useEffect(() => {
+    const id = setInterval(() => setNow(new Date()), 1000);
+    return () => clearInterval(id);
+  }, []);
+
+  // Time-based step:
+  // 0 = Баталгаажсан, 1 = Бэлтгэгдэж байна, 2 = Хүргэлтэнд гарсан (>=13:00), 3 = Хүргэгдсэн (>=13:15)
+  const minutesNow = now.getHours() * 60 + now.getMinutes();
+  const step = minutesNow >= 13 * 60 + 15 ? 3 : minutesNow >= 13 * 60 ? 2 : 1;
 
   useEffect(() => {
     if (typeof window === "undefined") return;
-
     const session = getSession();
     if (!session || !isNormalStudentSession(session)) {
       router.replace("/");
       return;
     }
-
-    const activeOrderId = getActiveOrderId();
-    if (!activeOrderId) {
-      setLoading(false);
-      setError("Идэвхтэй захиалга олдсонгүй. Төлбөрийн хэсэг рүү буцаад дахин оролдоно уу.");
+    const id = getActiveOrderId();
+    if (!id) {
+      setError("Идэвхтэй захиалга олдсонгүй.");
       return;
     }
-
     let cancelled = false;
     let intervalId: number | null = null;
-
-    const syncOrder = async () => {
+    const sync = async () => {
       try {
-        if (typeof document !== "undefined" && document.visibilityState === "hidden") {
-          return;
-        }
-
-        const response = await fetch(`/api/orders/${activeOrderId}`, {
-          cache: "no-store",
-        });
-
-        if (response.status === 404) {
-          if (!cancelled) {
-            setError("Захиалгын мэдээлэл олдсонгүй.");
-            setLoading(false);
-          }
+        if (typeof document !== "undefined" && document.visibilityState === "hidden") return;
+        const res = await fetch(`/api/orders/${id}`, { cache: "no-store" });
+        if (res.status === 404) {
+          if (!cancelled) setError("Захиалгын мэдээлэл олдсонгүй.");
           if (intervalId) clearInterval(intervalId);
           return;
         }
-
-        if (!response.ok) {
-          throw new Error("Төлөв шалгаж чадсангүй");
-        }
-
-        const nextOrder = (await response.json()) as OrderStatusResponse;
-
+        if (!res.ok) throw new Error("Төлөв шалгаж чадсангүй");
+        const next = (await res.json()) as OrderStatusResponse;
         if (cancelled) return;
-
-        upsertOrder(nextOrder);
-        setActiveOrderId(nextOrder.id);
-        setOrder(nextOrder);
-        setError(nextOrder.verificationError ?? "");
-        setLoading(false);
-
-        if (nextOrder.status === "approved" || nextOrder.status === "rejected") {
+        upsertOrder(next);
+        setActiveOrderId(next.id);
+        setOrder(next);
+        setError(next.verificationError ?? "");
+        if (next.status === "approved" || next.status === "rejected") {
           if (intervalId) clearInterval(intervalId);
         }
-      } catch (err) {
-        if (!cancelled) {
-          setError(err instanceof Error ? err.message : "Алдаа гарлаа");
-          setLoading(false);
-        }
+      } catch (e) {
+        if (!cancelled) setError(e instanceof Error ? e.message : "Алдаа гарлаа");
       }
     };
-
-    void syncOrder();
-    intervalId = window.setInterval(() => {
-      void syncOrder();
-    }, 3000);
-
-    const handleVisibilityChange = () => {
-      if (document.visibilityState === "visible") {
-        void syncOrder();
-      }
-    };
-
-    document.addEventListener("visibilitychange", handleVisibilityChange);
-
+    void sync();
+    intervalId = window.setInterval(() => void sync(), 3000);
     return () => {
       cancelled = true;
       if (intervalId) clearInterval(intervalId);
-      document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
   }, [router]);
 
-  if (typeof window === "undefined") {
-    return null;
-  }
+  if (typeof window === "undefined") return null;
 
-  const session = getSession();
-  if (!session || !isNormalStudentSession(session)) {
-    router.replace("/");
-    return null;
-  }
+  const items = order ? order.items.map((it) => {
+    const meta = MENU_ITEMS.find((m) => m.id === it.itemId);
+    return { ...it, image: meta?.image, tone: meta?.tone };
+  }) : [];
 
-  const status = order?.status ?? "pending";
-  const copy = getStatusCopy(status);
-  const showSpinner = loading || (status === "pending" && !error);
+  const idx = step;
+  const cur = STEPS[idx];
+  const orderNumber = order ? `#${order.id.slice(-5).toUpperCase()}` : `#PD-${String(Date.now()).slice(-5)}`;
 
   return (
-    <PageShell title="Төлбөрийн төлөв" subtitle="Bonum болон захиалгын төлөвийг бодит цагт шалгаж байна">
-      <div className="mx-auto flex min-h-[70vh] w-full max-w-2xl items-center justify-center">
-        <div className={`w-full rounded-[2rem] border border-white/10 bg-black/35 p-8 text-center shadow-[0_22px_60px_rgba(0,0,0,0.28)] backdrop-blur-2xl ${copy.tone}`}>
-          {showSpinner ? (
-            <div className="mx-auto mb-6 h-12 w-12 animate-spin rounded-full border-4 border-white/20 border-t-[#43f0c1]" />
-          ) : (
-            <div className="mb-6 text-5xl">{status === "approved" ? "OK" : status === "rejected" ? "X" : "..."}</div>
-          )}
-
-          <div className="flex justify-center">
-            <StatusBadge status={status} />
-          </div>
-
-          <h1 className="mt-5 text-2xl font-bold">{copy.title}</h1>
-          <p className="mt-2 text-sm text-[#f4efe8]/72">{copy.subtitle}</p>
-
-          {order && (
-            <div className="mt-6 rounded-[1.5rem] border border-white/10 bg-black/30 p-4 text-left">
-              <p className="text-sm text-[#f4efe8]/72">Захиалгын дугаар: {order.id}</p>
-              {order.bonumInvoiceId && (
-                <p className="mt-2 text-sm text-[#f4efe8]/72">Invoice: {order.bonumInvoiceId}</p>
-              )}
-              <p className="mt-2 text-sm text-[#f4efe8]/72">Нийт тоо: {order.totalCount}</p>
-            </div>
-          )}
-
-          {error && (
-            <div className="mt-6 rounded-2xl border border-rose-500/30 bg-rose-500/10 p-4 text-sm text-rose-100">
-              {error}
-            </div>
-          )}
-
-          <div className="mt-6 flex flex-col gap-3 sm:flex-row">
-            {status === "approved" ? (
-              <button
-                type="button"
-                onClick={() => {
-                  clearActiveOrderId();
-                  router.push("/select");
-                }}
-                className="flex-1 rounded-[1.2rem] bg-[#43f0c1] px-4 py-3 text-sm font-extrabold text-[#04110d] shadow-[0_18px_36px_rgba(67,240,193,0.26)] transition hover:-translate-y-0.5 hover:bg-[#61f4ce]"
-              >
-                Шинэ захиалга хийх
-              </button>
-            ) : status === "rejected" ? (
-              <button
-                type="button"
-                onClick={() => router.push("/account")}
-                className="flex-1 rounded-[1.2rem] bg-rose-600 px-4 py-3 text-sm font-bold text-white transition hover:bg-rose-500"
-              >
-                Дахин төлөх
-              </button>
-            ) : null}
-
-            <button
-              type="button"
-              onClick={() => router.push("/account")}
-              className="flex-1 rounded-[1.2rem] border border-white/10 bg-white/5 px-4 py-3 text-sm font-semibold text-[#f4efe8] transition hover:border-white/20 hover:bg-white/10"
-            >
-              Данс руу буцах
-            </button>
-          </div>
+    <main style={{ minHeight: "100vh", background: "var(--bg)" }}>
+      <header style={{ padding: "20px clamp(16px, 4vw, 40px)", maxWidth: 1000, margin: "0 auto" }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16 }}>
+          <button
+            onClick={() => router.push("/select")}
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 8,
+              padding: "10px 14px 10px 10px",
+              borderRadius: 999,
+              background: "var(--surface)",
+              border: "1px solid var(--border)",
+              fontSize: 14,
+              fontWeight: 700,
+              color: "var(--text)",
+              cursor: "pointer",
+            }}
+          >
+            <Icon name="chevron-left" size={16} /> Буцах
+          </button>
+          <Eyebrow>{orderNumber}</Eyebrow>
         </div>
-      </div>
-    </PageShell>
+        <div style={{ marginTop: 20 }}>
+          <Eyebrow>Захиалга</Eyebrow>
+          <h1
+            style={{
+              margin: "8px 0 0",
+              fontSize: "clamp(28px, 4vw, 44px)",
+              fontWeight: 800,
+              letterSpacing: "-0.03em",
+              lineHeight: 1.05,
+            }}
+          >
+            Захиалга бэлтгэгдэж байна
+          </h1>
+        </div>
+      </header>
+
+      <section style={{ padding: "8px clamp(16px, 4vw, 40px) 80px", maxWidth: 1000, margin: "0 auto" }}>
+        <Card padding={0} radius={28} style={{ overflow: "hidden" }}>
+          <div
+            style={{
+              padding: 32,
+              background: "linear-gradient(180deg, var(--accent-soft), transparent)",
+              display: "grid",
+              gridTemplateColumns: "auto 1fr auto",
+              alignItems: "center",
+              gap: 24,
+            }}
+            className="wait-hero"
+          >
+            <div
+              style={{
+                width: 96,
+                height: 96,
+                borderRadius: 999,
+                background: "var(--accent)",
+                color: "var(--on-accent)",
+                display: "grid",
+                placeItems: "center",
+                boxShadow: "0 12px 32px rgba(40,28,12,0.18)",
+                position: "relative",
+              }}
+            >
+              <Icon name={cur.icon} size={40} />
+              {step < 3 && (
+                <span
+                  style={{
+                    position: "absolute",
+                    inset: -6,
+                    borderRadius: 999,
+                    border: "2px solid var(--accent)",
+                    opacity: 0.4,
+                    animation: "pulse-ring 2s ease-out infinite",
+                  }}
+                />
+              )}
+            </div>
+            <div>
+              <Eyebrow>
+                {idx + 1}/{STEPS.length}
+              </Eyebrow>
+              <h2
+                style={{
+                  margin: "8px 0 0",
+                  fontSize: "clamp(26px, 4vw, 36px)",
+                  fontWeight: 800,
+                  letterSpacing: "-0.02em",
+                }}
+              >
+                {cur.k}
+              </h2>
+              <p style={{ margin: "6px 0 0", fontSize: 15, color: "var(--muted)" }}>{cur.s}</p>
+            </div>
+            <div style={{ textAlign: "right" }}>
+              <div
+                style={{
+                  fontSize: 12,
+                  fontWeight: 800,
+                  letterSpacing: "0.2em",
+                  color: "var(--muted)",
+                }}
+              >
+                ИРЭХ
+              </div>
+              <div style={{ fontSize: 28, fontWeight: 800, letterSpacing: "-0.02em", marginTop: 4 }}>13:15</div>
+              {order?.classNumber && (
+                <div style={{ fontSize: 13, color: "var(--muted)" }}>Анги {order.classNumber}</div>
+              )}
+            </div>
+          </div>
+
+          <div style={{ padding: "24px 32px 32px" }}>
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: `repeat(${STEPS.length}, 1fr)`,
+                gap: 4,
+              }}
+            >
+              {STEPS.map((_, i) => (
+                <div
+                  key={i}
+                  style={{
+                    height: 6,
+                    borderRadius: 999,
+                    background: i <= idx ? "var(--accent)" : "var(--surface-2)",
+                    transition: "background 400ms",
+                  }}
+                />
+              ))}
+            </div>
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: `repeat(${STEPS.length}, 1fr)`,
+                gap: 4,
+                marginTop: 12,
+              }}
+            >
+              {STEPS.map((s, i) => (
+                <div
+                  key={i}
+                  style={{
+                    fontSize: 12,
+                    fontWeight: 700,
+                    color: i <= idx ? "var(--text)" : "var(--muted)",
+                  }}
+                >
+                  {s.k}
+                </div>
+              ))}
+            </div>
+          </div>
+        </Card>
+
+        {error && (
+          <div
+            style={{
+              marginTop: 16,
+              padding: 12,
+              background: "#FBDBD3",
+              border: "1px solid #F1B7AA",
+              borderRadius: 12,
+              fontSize: 13,
+              color: "#8A2E1E",
+              fontWeight: 600,
+            }}
+          >
+            {error}
+          </div>
+        )}
+
+        {items.length > 0 && (
+          <div style={{ marginTop: 20 }}>
+            <Card>
+              <Eyebrow>Захиалга</Eyebrow>
+              <div style={{ display: "grid", gap: 10, marginTop: 14 }}>
+                {items.map((item) => (
+                  <div key={item.itemId} style={{ display: "flex", gap: 12, alignItems: "center" }}>
+                    <div style={{ width: 44, height: 44, borderRadius: 12, overflow: "hidden", flexShrink: 0 }}>
+                      <FoodImage src={item.image} tone={item.tone} aspect="square" />
+                    </div>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ fontSize: 14, fontWeight: 700 }}>{item.name}</div>
+                      <div style={{ fontSize: 12, color: "var(--muted)" }}>{item.qty} ш</div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </Card>
+          </div>
+        )}
+
+        <div style={{ marginTop: 20, textAlign: "center" }}>
+          <button
+            onClick={() => {
+              clearActiveOrderId();
+              router.push("/select");
+            }}
+            style={{
+              background: "var(--text)",
+              color: "var(--bg)",
+              border: "none",
+              borderRadius: 999,
+              padding: "14px 28px",
+              fontSize: 15,
+              fontWeight: 800,
+              cursor: "pointer",
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 8,
+            }}
+          >
+            <Icon name="plus" size={16} /> Шинэ захиалга
+          </button>
+        </div>
+      </section>
+
+      <style>{`
+        @media (max-width: 720px) {
+          .wait-hero {
+            grid-template-columns: auto 1fr !important;
+            padding: 24px !important;
+          }
+          .wait-hero > div:last-child {
+            grid-column: 1 / -1;
+            text-align: left !important;
+          }
+        }
+      `}</style>
+    </main>
   );
 }

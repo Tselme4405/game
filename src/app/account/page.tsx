@@ -2,7 +2,14 @@
 
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { PageShell } from "@/components/page-shell";
+import {
+  Card,
+  Eyebrow,
+  FoodImage,
+  Icon,
+  StatusDot,
+  formatMoney,
+} from "@/components/ui-kit";
 import { MENU_ITEMS } from "@/lib/constants";
 import { isNormalStudentSession } from "@/lib/guards";
 import {
@@ -47,47 +54,18 @@ type OrderStatusResponse = OrderRecord & {
 function getBonumLinkHref(link: BonumLink) {
   return link.deeplink ?? link.link ?? "";
 }
-
 function getActionableBonumLinks(links: BonumLink[]) {
-  return links.filter((link) => getBonumLinkHref(link).length > 0);
+  return links.filter((l) => getBonumLinkHref(l).length > 0);
 }
-
 function resolveQrExpiry(expiresAt: unknown, expiresIn: unknown) {
   if (typeof expiresAt === "string") {
     const parsed = Date.parse(expiresAt);
-    if (Number.isFinite(parsed)) {
-      return parsed;
-    }
+    if (Number.isFinite(parsed)) return parsed;
   }
-
   if (typeof expiresIn === "number" && Number.isFinite(expiresIn) && expiresIn > 0) {
     return Date.now() + expiresIn * 1000;
   }
-
   return Date.now() + 1800 * 1000;
-}
-
-function formatMoney(value: number) {
-  return `${new Intl.NumberFormat("en-US").format(value)}₮`;
-}
-
-function getPaymentStatusCopy(status: PaymentStatus) {
-  switch (status) {
-    case "approved":
-      return {
-        title: "Төлбөр амжилттай орлоо",
-        subtitle: "Захиалга шууд баталгаажсан.",
-        tone: "border-emerald-500/30 bg-emerald-500/10 text-emerald-50",
-      };
-    case "rejected":
-      return {
-        title: "Төлбөр амжилтгүй боллоо",
-        subtitle: "QR-ээ шинэчлээд дахин оролдоно уу.",
-        tone: "border-rose-500/30 bg-rose-500/10 text-rose-50",
-      };
-    default:
-      return null;
-  }
 }
 
 export default function AccountPage() {
@@ -105,118 +83,76 @@ export default function AccountPage() {
   const qrPaymentStatus = qrData?.status ?? null;
   const hasValidSession = !!session && isNormalStudentSession(session);
 
-  const selectedItems = MENU_ITEMS.filter((item) => (cart.items[item.id] ?? 0) > 0).map(
-    (item) => ({
-      itemId: item.id,
-      name: item.name,
-      qty: cart.items[item.id] ?? 0,
-      price: item.price,
-    }),
-  );
-  const totalQuantity = selectedItems.reduce((sum, item) => sum + item.qty, 0);
-  const totalPayment = selectedItems.reduce((sum, item) => sum + item.qty * item.price, 0);
+  const selectedItems = MENU_ITEMS.filter((item) => (cart.items[item.id] ?? 0) > 0).map((item) => ({
+    itemId: item.id,
+    name: item.name,
+    qty: cart.items[item.id] ?? 0,
+    price: item.price,
+    image: item.image,
+    tone: item.tone,
+  }));
+  const totalQuantity = selectedItems.reduce((s, i) => s + i.qty, 0);
+  const totalPayment = selectedItems.reduce((s, i) => s + i.qty * i.price, 0);
   const actionableLinks = qrData ? getActionableBonumLinks(qrData.links) : [];
   const isTestMode = qrData?.environment === "test";
-  const showPaymentAppLinks = actionableLinks.length > 0 && !isTestMode;
-  const paymentStatusCopy = getPaymentStatusCopy(qrData?.status ?? "pending");
 
   useEffect(() => {
     if (!qrData) return;
-
     const tick = () => {
       const secs = Math.max(0, Math.round((qrData.expiresAt - Date.now()) / 1000));
       setCountdown(secs);
-      if (secs === 0 && countdownRef.current) {
-        clearInterval(countdownRef.current);
-      }
+      if (secs === 0 && countdownRef.current) clearInterval(countdownRef.current);
     };
-
     tick();
     countdownRef.current = setInterval(tick, 1000);
-
     return () => {
-      if (countdownRef.current) {
-        clearInterval(countdownRef.current);
-      }
+      if (countdownRef.current) clearInterval(countdownRef.current);
     };
   }, [qrData]);
 
   useEffect(() => {
     if (!qrOrderId || qrPaymentStatus !== "pending") return;
-
     let cancelled = false;
     let intervalId: number | null = null;
 
-    const syncPaymentStatus = async () => {
+    const sync = async () => {
       try {
-        if (typeof document !== "undefined" && document.visibilityState === "hidden") {
-          return;
-        }
-
-        const response = await fetch(`/api/orders/${qrOrderId}`, {
-          cache: "no-store",
-        });
-
-        if (!response.ok) {
-          return;
-        }
-
-        const latestOrder = (await response.json()) as OrderStatusResponse;
-
+        if (typeof document !== "undefined" && document.visibilityState === "hidden") return;
+        const response = await fetch(`/api/orders/${qrOrderId}`, { cache: "no-store" });
+        if (!response.ok) return;
+        const latest = (await response.json()) as OrderStatusResponse;
         if (cancelled) return;
-
-        upsertOrder(latestOrder);
-        setActiveOrderId(latestOrder.id);
-        setQrError(latestOrder.verificationError ?? "");
-        setQrData((current) => {
-          if (!current || current.orderId !== latestOrder.id) {
-            return current;
-          }
-
-          return {
-            ...current,
-            status: latestOrder.status,
-          };
-        });
-
-        if ((latestOrder.status === "approved" || latestOrder.status === "rejected") && intervalId) {
+        upsertOrder(latest);
+        setActiveOrderId(latest.id);
+        setQrError(latest.verificationError ?? "");
+        setQrData((cur) => (!cur || cur.orderId !== latest.id ? cur : { ...cur, status: latest.status }));
+        if ((latest.status === "approved" || latest.status === "rejected") && intervalId) {
           window.clearInterval(intervalId);
         }
       } catch {
-        // Keep polling; intermittent network failures should not interrupt payment status updates.
+        /* ignore */
       }
     };
 
-    void syncPaymentStatus();
-    intervalId = window.setInterval(() => {
-      void syncPaymentStatus();
-    }, 3000);
-
-    const handleVisibilityChange = () => {
-      if (document.visibilityState === "visible") {
-        void syncPaymentStatus();
-      }
+    void sync();
+    intervalId = window.setInterval(() => void sync(), 3000);
+    const onVis = () => {
+      if (document.visibilityState === "visible") void sync();
     };
-
-    document.addEventListener("visibilitychange", handleVisibilityChange);
-
+    document.addEventListener("visibilitychange", onVis);
     return () => {
       cancelled = true;
-      if (intervalId) {
-        window.clearInterval(intervalId);
-      }
-      document.removeEventListener("visibilitychange", handleVisibilityChange);
+      if (intervalId) window.clearInterval(intervalId);
+      document.removeEventListener("visibilitychange", onVis);
     };
   }, [qrOrderId, qrPaymentStatus]);
 
   const handleBonumQr = useCallback(async () => {
     if (!session || selectedItems.length === 0 || qrLoading) return;
-
     const requestId = qrRequestRef.current + 1;
     qrRequestRef.current = requestId;
     setQrError("");
     setQrLoading(true);
-
     try {
       const qrRes = await fetch("/api/bonum/create-qr", {
         method: "POST",
@@ -224,33 +160,20 @@ export default function AccountPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ amount: totalPayment }),
       });
-
       const qrJson = await qrRes.json();
-
       if (!qrRes.ok || !qrJson.success) {
         throw new Error(qrJson.error ?? "QR үүсгэхэд алдаа гарлаа");
       }
+      if (requestId !== qrRequestRef.current) return;
 
-      if (requestId !== qrRequestRef.current) {
-        return;
-      }
-
-      const environment: BonumEnvironment =
-        qrJson.environment === "production" ? "production" : "test";
-      const links = Array.isArray(qrJson.links) ? (qrJson.links as BonumLink[]) : [];
-      const actionableQrLinks = getActionableBonumLinks(links);
-
-      if (environment === "test" && actionableQrLinks.length === 0) {
-        throw new Error(
-          "Test QR generated, but no supported app links returned. Энэ нь Bonum test terminal тохиргоо дутуу байгааг илтгэж магадгүй.",
-        );
-      }
+      const environment: BonumEnvironment = qrJson.environment === "production" ? "production" : "test";
+      const links: BonumLink[] = Array.isArray(qrJson.links) ? qrJson.links : [];
 
       const localOrder = createOrder({
         userName: session.name,
         classNumber: session.classNumber,
         role: session.role,
-        items: selectedItems,
+        items: selectedItems.map((i) => ({ itemId: i.itemId, name: i.name, qty: i.qty })),
         totalCount: cart.totalCount,
         status: "pending",
       });
@@ -264,274 +187,468 @@ export default function AccountPage() {
           bonumTransactionId: qrJson.transactionId,
         }),
       });
-
       if (!orderRes.ok) {
         const message = await orderRes.text().catch(() => "");
         throw new Error(message || "Захиалга хадгалж чадсангүй");
       }
-
-      const savedOrder = (await orderRes.json()) as OrderRecord;
+      const saved = (await orderRes.json()) as OrderRecord;
 
       setQrData({
         environment,
-        orderId: savedOrder.id,
-        status: savedOrder.status,
+        orderId: saved.id,
+        status: saved.status,
         qrImage: qrJson.qrImage,
         invoiceId: qrJson.invoiceId,
         transactionId: qrJson.transactionId,
         links,
         expiresAt: resolveQrExpiry(qrJson.expiresAt, qrJson.expiresIn),
       });
-      setActiveOrderId(savedOrder.id);
+      setActiveOrderId(saved.id);
       clearCart();
     } catch (error) {
       if (requestId === qrRequestRef.current) {
         setQrError(error instanceof Error ? error.message : "Алдаа гарлаа");
       }
     } finally {
-      if (requestId === qrRequestRef.current) {
-        setQrLoading(false);
-      }
+      if (requestId === qrRequestRef.current) setQrLoading(false);
     }
   }, [cart.totalCount, qrLoading, selectedItems, session, totalPayment]);
 
   useEffect(() => {
-    if (selectedItems.length === 0 || qrData || qrLoading || autoQrStartedRef.current) {
-      return;
-    }
-
+    if (selectedItems.length === 0 || qrData || qrLoading || autoQrStartedRef.current) return;
     autoQrStartedRef.current = true;
     void handleBonumQr();
   }, [handleBonumQr, qrData, qrLoading, selectedItems.length]);
 
-  const primaryButton =
-    "rounded-[1.2rem] bg-[#43f0c1] px-4 py-3 text-sm font-extrabold text-[#04110d] shadow-[0_18px_36px_rgba(67,240,193,0.26)] transition hover:-translate-y-0.5 hover:bg-[#61f4ce]";
-  const secondaryButton =
-    "rounded-[1.2rem] border border-white/10 bg-white/5 px-4 py-3 text-sm font-semibold text-[#f4efe8] transition hover:border-white/20 hover:bg-white/10";
-  const panelCard = "rounded-[1.5rem] border border-white/10 bg-black/30 p-4 sm:p-5";
-  const outerTone =
-    qrData?.status === "approved"
-      ? "border-emerald-500/35 bg-emerald-950/18"
-      : qrData?.status === "rejected"
-        ? "border-rose-500/25 bg-rose-950/12"
-        : "border-white/10 bg-black/35";
-
-  if (typeof window === "undefined") {
-    return null;
-  }
-
+  if (typeof window === "undefined") return null;
   if (!hasValidSession) {
     router.replace("/");
     return null;
   }
-
-  if (cart.totalCount <= 0) {
+  if (cart.totalCount <= 0 && !qrData) {
     router.replace("/select");
     return null;
   }
 
+  const mm = String(Math.floor(countdown / 60)).padStart(2, "0");
+  const ss = String(countdown % 60).padStart(2, "0");
+
   return (
-    <PageShell title="Төлбөрийн хэсэг" subtitle="QR эсвэл банкны апп-аар төлнө.">
+    <main style={{ minHeight: "100vh", background: "var(--bg)" }}>
+      <header style={{ padding: "20px clamp(16px, 4vw, 40px)", maxWidth: 1200, margin: "0 auto" }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16 }}>
+          <button
+            onClick={() => router.push("/select")}
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 8,
+              padding: "10px 14px 10px 10px",
+              borderRadius: 999,
+              background: "var(--surface)",
+              border: "1px solid var(--border)",
+              fontSize: 14,
+              fontWeight: 700,
+              cursor: "pointer",
+              color: "var(--text)",
+            }}
+          >
+            <Icon name="chevron-left" size={16} /> Буцах
+          </button>
+          <div style={{ display: "inline-flex", alignItems: "center", gap: 10 }}>
+            <div
+              style={{
+                width: 36,
+                height: 36,
+                borderRadius: 999,
+                background: "var(--accent)",
+                color: "var(--on-accent)",
+                display: "grid",
+                placeItems: "center",
+                fontWeight: 800,
+                fontSize: 14,
+              }}
+            >
+              {session!.name.charAt(0).toUpperCase()}
+            </div>
+            <div style={{ textAlign: "right" }}>
+              <div style={{ fontSize: 13, fontWeight: 800 }}>{session!.name}</div>
+              <div style={{ fontSize: 12, color: "var(--muted)" }}>Анги {session!.classNumber}</div>
+            </div>
+          </div>
+        </div>
+        <div style={{ marginTop: 20 }}>
+          <Eyebrow>QR төлбөр · Bonum</Eyebrow>
+          <h1
+            style={{
+              margin: "8px 0 0",
+              fontSize: "clamp(28px, 4vw, 44px)",
+              fontWeight: 800,
+              letterSpacing: "-0.03em",
+              lineHeight: 1.05,
+            }}
+          >
+            Төлбөрөө хийнэ үү
+          </h1>
+        </div>
+      </header>
+
       <section
-        className={`rounded-[2rem] border p-5 shadow-[0_22px_60px_rgba(0,0,0,0.28)] backdrop-blur-2xl sm:p-6 ${outerTone}`}
+        style={{
+          padding: "8px clamp(16px, 4vw, 40px) 80px",
+          maxWidth: 1200,
+          margin: "0 auto",
+        }}
       >
-        <div className="grid gap-6 xl:grid-cols-[320px_minmax(0,1fr)]">
-          <aside className="space-y-4">
-            <section className={panelCard}>
-              <p className="text-[11px] font-extrabold uppercase tracking-[0.3em] text-[#43f0c1]">
-                Profile
-              </p>
-              <h2 className="mt-3 text-2xl font-bold text-[#f4efe8]">{session.name}</h2>
-              <p className="mt-1 text-sm text-[#f4efe8]/68">Анги: {session.classNumber}</p>
-
-              <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-1">
-                <div className="rounded-[1.4rem] border border-white/10 bg-white/5 p-4">
-                  <p className="text-[11px] font-bold uppercase tracking-[0.24em] text-[#f4efe8]/52">
-                    Нийт ширхэг
-                  </p>
-                  <p className="mt-2 text-3xl font-black text-[#f4efe8]">{totalQuantity}</p>
-                </div>
-
-                <div className="rounded-[1.4rem] border border-[#43f0c1]/20 bg-[#43f0c1]/8 p-4">
-                  <p className="text-[11px] font-bold uppercase tracking-[0.24em] text-[#baffef]">
-                    Нийт дүн
-                  </p>
-                  <p className="mt-2 text-3xl font-black text-[#baffef]">{formatMoney(totalPayment)}</p>
-                </div>
-              </div>
-            </section>
-
-            <section className={panelCard}>
-              <p className="text-[11px] font-extrabold uppercase tracking-[0.3em] text-[#43f0c1]">
-                Захиалга
-              </p>
-              <div className="mt-4 space-y-3">
-                {selectedItems.map((item) => (
-                  <div
-                    key={item.itemId}
-                    className="rounded-[1.25rem] border border-white/10 bg-white/5 px-4 py-3"
-                  >
-                    <div className="flex items-center justify-between gap-3">
-                      <p className="text-sm font-semibold text-[#f4efe8]">{item.name}</p>
-                      <p className="text-sm font-bold text-[#baffef]">
-                        {formatMoney(item.qty * item.price)}
-                      </p>
-                    </div>
-                    <p className="mt-2 text-xs text-[#f4efe8]/62">
-                      {item.qty} ш x {formatMoney(item.price)}
-                    </p>
-                  </div>
-                ))}
-              </div>
-            </section>
-          </aside>
-
-          <section className={panelCard}>
-            <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="pay-grid">
+          <Card padding={0} radius={28}>
+            <div
+              style={{
+                padding: "24px 28px",
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                borderBottom: "1px solid var(--border)",
+                gap: 12,
+                flexWrap: "wrap",
+              }}
+            >
               <div>
-                <p className="text-[11px] font-extrabold uppercase tracking-[0.3em] text-[#43f0c1]">
-                  QR төлбөр
-                </p>
-                <h2 className="mt-3 text-2xl font-bold text-[#f4efe8]">
-                  QR эсвэл банкны апп-аар төлөх
+                <Eyebrow>QR төлбөр</Eyebrow>
+                <h2 style={{ margin: "8px 0 0", fontSize: 22, fontWeight: 800, letterSpacing: "-0.02em" }}>
+                  Банкны аппаар уншуулна уу
                 </h2>
-                <p className="mt-2 text-sm leading-6 text-[#f4efe8]/72">
-                  QR гармагц утсаараа уншуулж эсвэл банкны аппын товчоор төлнө.
-                </p>
               </div>
-
-              {qrData?.status === "pending" && (
-                <div className="rounded-full border border-white/10 bg-white/5 px-4 py-2 text-sm font-mono text-[#f4efe8]">
-                  {countdown > 0
-                    ? `${Math.floor(countdown / 60)}:${String(countdown % 60).padStart(2, "0")}`
-                    : "Хугацаа дууссан"}
-                </div>
-              )}
+              <StatusDot
+                tone={
+                  qrData?.status === "approved"
+                    ? "approved"
+                    : qrData?.status === "rejected"
+                      ? "rejected"
+                      : "pending"
+                }
+                label={
+                  qrData?.status === "approved"
+                    ? "Баталгаажсан"
+                    : qrData?.status === "rejected"
+                      ? "Цуцлагдсан"
+                      : countdown > 0
+                        ? `${mm}:${ss}`
+                        : "Хүлээгдэж байна"
+                }
+              />
             </div>
 
-            {paymentStatusCopy && (
-              <div className={`mt-5 rounded-[1.5rem] border p-4 ${paymentStatusCopy.tone}`}>
-                <p className="text-lg font-bold">{paymentStatusCopy.title}</p>
-                <p className="mt-2 text-sm leading-6 opacity-90">{paymentStatusCopy.subtitle}</p>
-              </div>
-            )}
-
-            {qrError && (
-              <div className="mt-4 rounded-[1.5rem] border border-rose-500/30 bg-rose-500/10 p-4 text-sm text-rose-100">
-                {qrError}
-              </div>
-            )}
-
-            {!qrData && (
-              <div className="mt-5 rounded-[1.75rem] border border-white/10 bg-black/25 p-5 text-center">
-                <p className="text-sm font-semibold text-[#f4efe8]">
-                  {qrLoading ? "QR үүсгэж байна..." : "QR бэлдээгүй байна."}
-                </p>
-                {!qrLoading && (
-                  <button
-                    type="button"
-                    onClick={handleBonumQr}
-                    className={`mt-4 ${primaryButton}`}
+            <div className="qr-body">
+              <div
+                style={{
+                  background: "var(--surface-2)",
+                  padding: 16,
+                  borderRadius: 24,
+                  border: "1px solid var(--border)",
+                  display: "flex",
+                  flexDirection: "column",
+                  alignItems: "center",
+                  gap: 12,
+                }}
+              >
+                {qrData ? (
+                  /* eslint-disable-next-line @next/next/no-img-element */
+                  <img
+                    src={`data:image/png;base64,${qrData.qrImage}`}
+                    alt="Bonum QR"
+                    width={220}
+                    height={220}
+                    style={{ borderRadius: 12, width: "100%", maxWidth: 220, height: "auto" }}
+                  />
+                ) : (
+                  <div
+                    style={{
+                      width: 220,
+                      height: 220,
+                      background: "var(--surface)",
+                      borderRadius: 12,
+                      display: "grid",
+                      placeItems: "center",
+                      color: "var(--muted)",
+                      fontWeight: 700,
+                      fontSize: 13,
+                    }}
                   >
-                    QR үүсгэх
-                  </button>
+                    {qrLoading ? "QR үүсгэж байна..." : "QR бэлдэж байна..."}
+                  </div>
+                )}
+                {qrData && (
+                  <div
+                    style={{
+                      background: "var(--surface)",
+                      padding: "8px 12px",
+                      borderRadius: 10,
+                      fontFamily: "ui-monospace, monospace",
+                      fontSize: 11,
+                      color: "var(--muted)",
+                      letterSpacing: "0.08em",
+                    }}
+                  >
+                    INV-{qrData.invoiceId.slice(-6).toUpperCase()}
+                  </div>
                 )}
               </div>
-            )}
 
-            {qrData && (
-              <>
+              <div>
+                <div style={{ fontSize: 14, fontWeight: 700, color: "var(--muted)", marginBottom: 8 }}>Төлөх дүн</div>
+                <div style={{ fontSize: 48, fontWeight: 800, letterSpacing: "-0.03em", lineHeight: 1 }}>
+                  {formatMoney(totalPayment)}
+                </div>
+                <div style={{ fontSize: 14, color: "var(--muted)", marginTop: 6 }}>
+                  {totalQuantity} ширхэг · {session!.name}
+                </div>
+
                 {isTestMode && (
-                  <div className="mt-5 rounded-[1.5rem] border border-amber-500/30 bg-amber-500/10 p-4 text-sm leading-6 text-amber-100">
-                    Энэ QR нь test горимынх тул live банкны апп дээр ажиллахгүй байж магадгүй.
+                  <div
+                    style={{
+                      marginTop: 16,
+                      padding: 12,
+                      background: "#FFF3D1",
+                      border: "1px solid #F1D88A",
+                      borderRadius: 12,
+                      fontSize: 12,
+                      color: "#5C3F00",
+                      fontWeight: 600,
+                    }}
+                  >
+                    Test горим — live банкны апп дээр ажиллахгүй байж магадгүй.
                   </div>
                 )}
 
-                {showPaymentAppLinks && qrData.status === "pending" && (
-                  <div className="mt-5">
-                    <p className="mb-3 text-[11px] font-extrabold uppercase tracking-[0.3em] text-[#43f0c1]">
-                      Банкны апп
-                    </p>
-                    <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+                {actionableLinks.length > 0 && qrData?.status === "pending" && (
+                  <div style={{ marginTop: 24 }}>
+                    <div
+                      style={{
+                        fontSize: 12,
+                        fontWeight: 800,
+                        letterSpacing: "0.2em",
+                        color: "var(--muted)",
+                        marginBottom: 10,
+                      }}
+                    >
+                      БАНКНЫ АПП
+                    </div>
+                    <div
+                      style={{
+                        display: "grid",
+                        gridTemplateColumns: "repeat(auto-fit, minmax(120px, 1fr))",
+                        gap: 8,
+                      }}
+                    >
                       {actionableLinks.map((item) => (
                         <a
                           key={item.name}
                           href={getBonumLinkHref(item)}
                           target="_blank"
                           rel="noopener noreferrer"
-                          className="flex min-h-[92px] flex-col items-center justify-center gap-2 rounded-[1.5rem] border border-white/10 bg-black/30 px-3 py-4 text-center transition hover:border-white/20 hover:bg-black/40"
+                          style={{
+                            padding: "10px 12px",
+                            background: "var(--surface-2)",
+                            border: "1px solid var(--border)",
+                            borderRadius: 14,
+                            fontSize: 13,
+                            fontWeight: 700,
+                            display: "flex",
+                            alignItems: "center",
+                            gap: 8,
+                            color: "var(--text)",
+                          }}
                         >
-                          {item.logo && (
-                            <img
-                              src={item.logo}
-                              alt={item.name}
-                              width={36}
-                              height={36}
-                              className="rounded-lg"
-                            />
+                          {item.logo ? (
+                            /* eslint-disable-next-line @next/next/no-img-element */
+                            <img src={item.logo} alt={item.name} width={28} height={28} style={{ borderRadius: 8 }} />
+                          ) : (
+                            <div
+                              style={{
+                                width: 28,
+                                height: 28,
+                                borderRadius: 8,
+                                background: "var(--bg)",
+                                display: "grid",
+                                placeItems: "center",
+                                fontWeight: 800,
+                                fontSize: 11,
+                              }}
+                            >
+                              {item.name.charAt(0)}
+                            </div>
                           )}
-                          <span className="text-xs font-semibold leading-5 text-[#f4efe8]">
-                            {item.name}
-                          </span>
+                          {item.name}
                         </a>
                       ))}
                     </div>
                   </div>
                 )}
 
-                <div className="mt-5 grid gap-4 lg:grid-cols-[260px_minmax(0,1fr)]">
-                  <div className="flex flex-col items-center gap-3 rounded-[1.75rem] border border-white/10 bg-black/30 p-4 sm:p-5">
-                    <img
-                      key={qrData.invoiceId}
-                      src={`data:image/png;base64,${qrData.qrImage}`}
-                      alt="Bonum QR code"
-                      width={220}
-                      height={220}
-                      className="h-auto w-full max-w-[220px] rounded-[1.25rem]"
-                    />
-                  </div>
-
-                  <div className="rounded-[1.75rem] border border-white/10 bg-black/30 p-4 sm:p-5">
-                    <p className="text-sm leading-7 text-[#f4efe8]/72">
-                      {qrData.status === "approved"
-                        ? "Төлбөр орсон тул захиалга шууд баталгаажсан."
-                        : qrData.status === "rejected"
-                          ? "Төлбөр амжилтгүй болсон байна. QR-ээ шинэчлээд дахин оролдоно уу."
-                          : "Төлбөр хийсний дараа захиалга шууд баталгаажна."}
-                    </p>
-
-                    <div className="mt-5 flex flex-col gap-3 sm:flex-row">
-                      {qrData.status !== "approved" && (
-                        <button
-                          type="button"
-                          onClick={handleBonumQr}
-                          disabled={qrLoading}
-                          className={`sm:flex-1 ${secondaryButton} disabled:cursor-not-allowed disabled:opacity-50`}
-                        >
-                          {qrLoading ? "QR шинэчилж байна..." : "QR шинэчлэх"}
-                        </button>
-                      )}
-
-                      {qrData.status === "approved" && (
-                        <button
-                          type="button"
-                          onClick={() => {
-                            clearActiveOrderId();
-                            router.push("/select");
-                          }}
-                          className={`sm:flex-1 ${primaryButton}`}
-                        >
-                          Шинэ захиалга хийх
-                        </button>
-                      )}
+                {qrData?.status === "approved" && (
+                  <div
+                    style={{
+                      marginTop: 20,
+                      padding: 16,
+                      background: "#E8F6ED",
+                      border: "1px solid #B4E4C4",
+                      borderRadius: 16,
+                    }}
+                  >
+                    <div style={{ display: "flex", alignItems: "center", gap: 10, color: "#0E5132" }}>
+                      <Icon name="check" size={18} />
+                      <span style={{ fontWeight: 800, fontSize: 15 }}>Төлбөр амжилттай орлоо</span>
                     </div>
+                    <button
+                      onClick={() => router.push("/waiting")}
+                      style={{
+                        marginTop: 12,
+                        width: "100%",
+                        background: "var(--accent)",
+                        color: "var(--on-accent)",
+                        border: "none",
+                        borderRadius: 999,
+                        padding: "12px",
+                        fontSize: 14,
+                        fontWeight: 800,
+                        cursor: "pointer",
+                        display: "inline-flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        gap: 8,
+                      }}
+                    >
+                      Захиалгаа харах <Icon name="arrow-right" size={14} />
+                    </button>
                   </div>
+                )}
+
+                {qrError && (
+                  <div
+                    style={{
+                      marginTop: 16,
+                      padding: 12,
+                      background: "#FBDBD3",
+                      border: "1px solid #F1B7AA",
+                      borderRadius: 12,
+                      fontSize: 13,
+                      color: "#8A2E1E",
+                      fontWeight: 600,
+                    }}
+                  >
+                    {qrError}
+                  </div>
+                )}
+
+                {(qrData?.status === "pending" || qrData?.status === "rejected") && (
+                  <div style={{ marginTop: 16, display: "flex", gap: 10, flexWrap: "wrap" }}>
+                    <button
+                      onClick={handleBonumQr}
+                      disabled={qrLoading}
+                      style={{
+                        background: "var(--surface-2)",
+                        color: "var(--text)",
+                        border: "1px solid var(--border)",
+                        borderRadius: 999,
+                        padding: "12px 18px",
+                        fontSize: 14,
+                        fontWeight: 800,
+                        cursor: qrLoading ? "not-allowed" : "pointer",
+                        opacity: qrLoading ? 0.6 : 1,
+                      }}
+                    >
+                      {qrLoading ? "QR шинэчилж байна..." : "QR шинэчлэх"}
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
+          </Card>
+
+          <Card padding={0} radius={24}>
+            <div style={{ padding: 20, borderBottom: "1px solid var(--border)" }}>
+              <Eyebrow>Захиалгын хураангуй</Eyebrow>
+            </div>
+            <div style={{ padding: 20, display: "grid", gap: 12 }}>
+              {selectedItems.length === 0 && qrData ? (
+                <div style={{ fontSize: 14, color: "var(--muted)" }}>
+                  Захиалга үүсгэгдсэн. Төлбөр хүлээгдэж байна.
                 </div>
-              </>
-            )}
-          </section>
+              ) : (
+                selectedItems.map((item) => (
+                  <div key={item.itemId} style={{ display: "flex", gap: 12, alignItems: "center" }}>
+                    <div style={{ width: 44, height: 44, borderRadius: 12, overflow: "hidden", flexShrink: 0 }}>
+                      <FoodImage src={item.image} tone={item.tone} aspect="square" />
+                    </div>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 14, fontWeight: 700 }}>{item.name}</div>
+                      <div style={{ fontSize: 12, color: "var(--muted)" }}>{item.qty} ш</div>
+                    </div>
+                    <div style={{ fontSize: 14, fontWeight: 800 }}>{formatMoney(item.qty * item.price)}</div>
+                  </div>
+                ))
+              )}
+            </div>
+            <div
+              style={{
+                padding: 20,
+                borderTop: "1px solid var(--border)",
+                background: "var(--surface-2)",
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "baseline",
+              }}
+            >
+              <span style={{ fontSize: 14, fontWeight: 800 }}>Нийт</span>
+              <span style={{ fontSize: 18, fontWeight: 800 }}>{formatMoney(totalPayment)}</span>
+            </div>
+          </Card>
         </div>
+
+        {qrData?.status === "approved" && (
+          <div style={{ marginTop: 20, textAlign: "center" }}>
+            <button
+              onClick={() => {
+                clearActiveOrderId();
+                router.push("/select");
+              }}
+              style={{
+                background: "transparent",
+                color: "var(--muted)",
+                border: "1px solid var(--border)",
+                borderRadius: 999,
+                padding: "10px 20px",
+                fontSize: 13,
+                fontWeight: 700,
+                cursor: "pointer",
+              }}
+            >
+              Шинэ захиалга хийх
+            </button>
+          </div>
+        )}
       </section>
-    </PageShell>
+
+      <style>{`
+        .pay-grid {
+          display: grid;
+          grid-template-columns: minmax(0, 1fr) 360px;
+          gap: 24px;
+          align-items: start;
+        }
+        .qr-body {
+          padding: 28px;
+          display: grid;
+          grid-template-columns: auto 1fr;
+          gap: 28px;
+          align-items: center;
+        }
+        @media (max-width: 900px) {
+          .pay-grid { grid-template-columns: 1fr; }
+          .qr-body { grid-template-columns: 1fr; padding: 20px; }
+        }
+      `}</style>
+    </main>
   );
 }

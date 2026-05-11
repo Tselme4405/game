@@ -2,550 +2,553 @@
 
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { EmptyState } from "@/components/empty-state";
-import { OrderCard } from "@/components/order-card";
-import { PageShell } from "@/components/page-shell";
+import { Card, Eyebrow, FoodImage, Icon, StatusDot, formatMoney } from "@/components/ui-kit";
 import { MENU_ITEMS } from "@/lib/constants";
 import { isDeliverySession } from "@/lib/guards";
-import { getSession } from "@/lib/storage";
+import { clearSession, getSession } from "@/lib/storage";
 import type { OrderRecord } from "@/lib/types";
+
+// Demo / mock data — энэ нь зөвхөн харуулах зорилгоор хэвлэгдэнэ
+function makeMockOrders(): OrderRecord[] {
+  const now = new Date();
+  const mk = (dayOffset: number, idx: number, data: Omit<OrderRecord, "id" | "createdAt" | "role" | "status">): OrderRecord => {
+    const d = new Date(now);
+    d.setDate(now.getDate() - dayOffset);
+    d.setHours(11, 30, idx, 0);
+    return {
+      ...data,
+      id: `mock-${dayOffset}-${idx}`,
+      createdAt: d.toISOString(),
+      role: "student",
+      status: "approved",
+    };
+  };
+  return [
+    mk(0, 1, { userName: "Болд-Эрдэнэ", classNumber: "301", items: [{ itemId: "mahtai_piroshki", name: "Махтай пирошки", qty: 2 }, { itemId: "mantuun_buuz", name: "Мантуун бууз", qty: 1 }], totalCount: 3 }),
+    mk(0, 2, { userName: "Сарангэрэл", classNumber: "301", items: [{ itemId: "tomstoi_piroshki", name: "Төмстэй пирошки", qty: 1 }], totalCount: 1 }),
+    mk(0, 3, { userName: "Тэмүүлэн", classNumber: "302", items: [{ itemId: "mahtai_piroshki", name: "Махтай пирошки", qty: 3 }], totalCount: 3 }),
+    mk(0, 4, { userName: "Амарбаясгалан", classNumber: "303", items: [{ itemId: "mantuun_buuz", name: "Мантуун бууз", qty: 2 }, { itemId: "tomstoi_piroshki", name: "Төмстэй пирошки", qty: 1 }], totalCount: 3 }),
+    mk(0, 5, { userName: "Номин-Эрдэнэ", classNumber: "401", items: [{ itemId: "mahtai_piroshki", name: "Махтай пирошки", qty: 1 }, { itemId: "tomstoi_piroshki", name: "Төмстэй пирошки", qty: 1 }], totalCount: 2 }),
+    mk(0, 6, { userName: "Баярмаа", classNumber: "402", items: [{ itemId: "mantuun_buuz", name: "Мантуун бууз", qty: 4 }], totalCount: 4 }),
+    mk(1, 1, { userName: "Энхжаргал", classNumber: "301", items: [{ itemId: "mahtai_piroshki", name: "Махтай пирошки", qty: 2 }], totalCount: 2 }),
+    mk(1, 2, { userName: "Ганболд", classNumber: "302", items: [{ itemId: "tomstoi_piroshki", name: "Төмстэй пирошки", qty: 2 }], totalCount: 2 }),
+    mk(2, 1, { userName: "Цолмон", classNumber: "403", items: [{ itemId: "mahtai_piroshki", name: "Махтай пирошки", qty: 1 }, { itemId: "mantuun_buuz", name: "Мантуун бууз", qty: 1 }], totalCount: 2 }),
+    mk(2, 2, { userName: "Мөнхцэцэг", classNumber: "305", items: [{ itemId: "mantuun_buuz", name: "Мантуун бууз", qty: 3 }], totalCount: 3 }),
+    mk(3, 1, { userName: "Анхбаяр", classNumber: "304", items: [{ itemId: "mahtai_piroshki", name: "Махтай пирошки", qty: 2 }, { itemId: "tomstoi_piroshki", name: "Төмстэй пирошки", qty: 1 }], totalCount: 3 }),
+    mk(4, 1, { userName: "Дөлгөөн", classNumber: "302", items: [{ itemId: "mahtai_piroshki", name: "Махтай пирошки", qty: 1 }], totalCount: 1 }),
+    mk(4, 2, { userName: "Уянга", classNumber: "401", items: [{ itemId: "mantuun_buuz", name: "Мантуун бууз", qty: 2 }, { itemId: "tomstoi_piroshki", name: "Төмстэй пирошки", qty: 2 }], totalCount: 4 }),
+    mk(5, 1, { userName: "Жаргалсайхан", classNumber: "403", items: [{ itemId: "mahtai_piroshki", name: "Махтай пирошки", qty: 3 }], totalCount: 3 }),
+    mk(6, 1, { userName: "Алтанзул", classNumber: "305", items: [{ itemId: "tomstoi_piroshki", name: "Төмстэй пирошки", qty: 1 }, { itemId: "mantuun_buuz", name: "Мантуун бууз", qty: 1 }], totalCount: 2 }),
+  ];
+}
+const MOCK_ORDERS = makeMockOrders();
 
 const DELIVERY_WINDOW_DAYS = 7;
 const DELIVERY_TIME_ZONE = "Asia/Ulaanbaatar";
-const DELIVERY_SUMMARY_ITEMS = MENU_ITEMS;
 
-const dayKeyFormatter = new Intl.DateTimeFormat("en-CA", {
+const dayKeyFmt = new Intl.DateTimeFormat("en-CA", {
   timeZone: DELIVERY_TIME_ZONE,
   year: "numeric",
   month: "2-digit",
   day: "2-digit",
 });
-
-const dayLabelFormatter = new Intl.DateTimeFormat("mn-MN", {
+const dayShortFmt = new Intl.DateTimeFormat("mn-MN", {
   timeZone: DELIVERY_TIME_ZONE,
-  month: "long",
-  day: "numeric",
-  weekday: "long",
+  weekday: "short",
 });
 
-type ItemTotals = Record<string, number>;
+function getDayKey(d: Date | string) {
+  return dayKeyFmt.format(d instanceof Date ? d : new Date(d));
+}
 
-type StudentSummary = {
-  name: string;
-  totalCount: number;
-  itemTotals: ItemTotals;
-};
-
-type ClassSummary = {
-  classNumber: string;
-  totalCount: number;
-  itemTotals: ItemTotals;
-  students: StudentSummary[];
-};
-
-type DaySummary = {
+type Day = {
   key: string;
-  dayNumber: number;
   label: string;
+  day: number;
   isToday: boolean;
-  totalOrders: number;
-  totalItems: number;
-  itemTotals: Array<{
-    id: string;
-    name: string;
-    total: number;
-  }>;
-  classSummaries: ClassSummary[];
   orders: OrderRecord[];
 };
-
-function createEmptyItemTotals(): ItemTotals {
-  return Object.fromEntries(MENU_ITEMS.map((item) => [item.id, 0])) as ItemTotals;
-}
-
-function getDeliveryDayKey(value: Date | string) {
-  const date = value instanceof Date ? value : new Date(value);
-  return dayKeyFormatter.format(date);
-}
-
-function buildItemTotals(orders: OrderRecord[]) {
-  return MENU_ITEMS.map((item) => ({
-    id: item.id,
-    name: item.name,
-    total: orders.reduce((sum, order) => {
-      const match = order.items.find((orderItem) => orderItem.itemId === item.id);
-      return sum + (match?.qty ?? 0);
-    }, 0),
-  }));
-}
-
-function buildClassSummaries(orders: OrderRecord[]): ClassSummary[] {
-  const classMap = new Map<
-    string,
-    {
-      classNumber: string;
-      totalCount: number;
-      itemTotals: ItemTotals;
-      students: Map<string, StudentSummary>;
-    }
-  >();
-
-  for (const order of orders) {
-    const classNumber = order.classNumber?.trim() || "Анги тодорхойгүй";
-    const classEntry =
-      classMap.get(classNumber) ??
-      {
-        classNumber,
-        totalCount: 0,
-        itemTotals: createEmptyItemTotals(),
-        students: new Map(),
-      };
-
-    classEntry.totalCount += order.totalCount;
-
-    const studentEntry =
-      classEntry.students.get(order.userName) ??
-      {
-        name: order.userName,
-        totalCount: 0,
-        itemTotals: createEmptyItemTotals(),
-      };
-
-    studentEntry.totalCount += order.totalCount;
-
-    for (const item of order.items) {
-      classEntry.itemTotals[item.itemId] = (classEntry.itemTotals[item.itemId] ?? 0) + item.qty;
-      studentEntry.itemTotals[item.itemId] = (studentEntry.itemTotals[item.itemId] ?? 0) + item.qty;
-    }
-
-    classEntry.students.set(order.userName, studentEntry);
-    classMap.set(classNumber, classEntry);
-  }
-
-  return Array.from(classMap.values())
-    .map((classEntry) => ({
-      classNumber: classEntry.classNumber,
-      totalCount: classEntry.totalCount,
-      itemTotals: classEntry.itemTotals,
-      students: Array.from(classEntry.students.values()).sort((left, right) =>
-        left.name.localeCompare(right.name, "mn"),
-      ),
-    }))
-    .sort((left, right) => left.classNumber.localeCompare(right.classNumber, "mn"));
-}
-
-function createDayWindow(days: number) {
-  const anchor = new Date();
-  anchor.setHours(12, 0, 0, 0);
-
-  return Array.from({ length: days }, (_, index) => {
-    const offset = days - index - 1;
-    const date = new Date(anchor);
-    date.setDate(anchor.getDate() - offset);
-
-    return {
-      key: getDeliveryDayKey(date),
-      label: dayLabelFormatter.format(date),
-      isToday: offset === 0,
-    };
-  });
-}
 
 export default function DeliveryPage() {
   const router = useRouter();
   const [orders, setOrders] = useState<OrderRecord[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [selectedKey, setSelectedKey] = useState("");
   const [error, setError] = useState("");
-  const [selectedDayKey, setSelectedDayKey] = useState("");
   const [session] = useState(() => (typeof window === "undefined" ? null : getSession()));
   const isBrowser = typeof window !== "undefined";
 
-  const approvedOrders = useMemo(
+  const approved = useMemo(
     () =>
-      orders
-        .filter((order) => order.status === "approved")
-        .sort((left, right) => Date.parse(right.createdAt) - Date.parse(left.createdAt)),
+      [...orders, ...MOCK_ORDERS]
+        .filter((o) => o.status === "approved")
+        .sort((l, r) => Date.parse(r.createdAt) - Date.parse(l.createdAt)),
     [orders],
   );
 
-  const daySummaries = useMemo<DaySummary[]>(() => {
-    const groupedOrders = new Map<string, OrderRecord[]>();
-
-    for (const order of approvedOrders) {
-      const dayKey = getDeliveryDayKey(order.createdAt);
-      const dayOrders = groupedOrders.get(dayKey) ?? [];
-      dayOrders.push(order);
-      groupedOrders.set(dayKey, dayOrders);
+  const days: Day[] = useMemo(() => {
+    const today = new Date();
+    today.setHours(12, 0, 0, 0);
+    const map = new Map<string, OrderRecord[]>();
+    for (const o of approved) {
+      const k = getDayKey(o.createdAt);
+      const arr = map.get(k) ?? [];
+      arr.push(o);
+      map.set(k, arr);
     }
-
-    return createDayWindow(DELIVERY_WINDOW_DAYS).map((day, index) => {
-      const dayOrders = [...(groupedOrders.get(day.key) ?? [])].sort(
-        (left, right) => Date.parse(right.createdAt) - Date.parse(left.createdAt),
-      );
-
+    return Array.from({ length: DELIVERY_WINDOW_DAYS }, (_, i) => {
+      const offset = DELIVERY_WINDOW_DAYS - 1 - i;
+      const d = new Date(today);
+      d.setDate(today.getDate() - offset);
+      const k = getDayKey(d);
       return {
-        key: day.key,
-        dayNumber: index + 1,
-        label: day.label,
-        isToday: day.isToday,
-        totalOrders: dayOrders.length,
-        totalItems: dayOrders.reduce((sum, order) => sum + order.totalCount, 0),
-        itemTotals: buildItemTotals(dayOrders),
-        classSummaries: buildClassSummaries(dayOrders),
-        orders: dayOrders,
+        key: k,
+        label: dayShortFmt.format(d),
+        day: d.getDate(),
+        isToday: offset === 0,
+        orders: map.get(k) ?? [],
       };
     });
-  }, [approvedOrders]);
-
-  const fallbackDayKey = useMemo(() => {
-    for (let index = daySummaries.length - 1; index >= 0; index -= 1) {
-      if (daySummaries[index].orders.length > 0) {
-        return daySummaries[index].key;
-      }
-    }
-
-    return daySummaries[daySummaries.length - 1]?.key ?? "";
-  }, [daySummaries]);
+  }, [approved]);
 
   useEffect(() => {
-    if (!daySummaries.length) return;
-
-    const stillExists = daySummaries.some((day) => day.key === selectedDayKey);
-    if (!selectedDayKey || !stillExists) {
-      setSelectedDayKey(fallbackDayKey);
+    if (!days.length) return;
+    if (!days.some((d) => d.key === selectedKey)) {
+      const todayDay = days.find((d) => d.isToday);
+      setSelectedKey(todayDay?.key ?? days[days.length - 1].key);
     }
-  }, [daySummaries, fallbackDayKey, selectedDayKey]);
-
-  const selectedDay =
-    daySummaries.find((day) => day.key === selectedDayKey) ??
-    daySummaries[daySummaries.length - 1] ??
-    null;
+  }, [days, selectedKey]);
 
   const fetchOrders = useCallback(async () => {
     try {
-      if (typeof document !== "undefined" && document.visibilityState === "hidden") {
-        return;
-      }
-
-      const response = await fetch(
+      if (typeof document !== "undefined" && document.visibilityState === "hidden") return;
+      const res = await fetch(
         `/api/orders?status=approved&limit=1000&days=${DELIVERY_WINDOW_DAYS}&cleanup=true`,
-        {
-          cache: "no-store",
-        },
+        { cache: "no-store" },
       );
-
-      if (!response.ok) {
-        throw new Error("Захиалгуудыг уншиж чадсангүй.");
-      }
-
-      const incoming = (await response.json()) as OrderRecord[];
-      const deduped = new Map<string, OrderRecord>();
-
-      for (const order of incoming) {
-        if (!order?.id) continue;
-        deduped.set(order.id, order);
-      }
-
-      setOrders(Array.from(deduped.values()));
+      if (!res.ok) throw new Error("Захиалгуудыг уншиж чадсангүй.");
+      const incoming = (await res.json()) as OrderRecord[];
+      const dedup = new Map<string, OrderRecord>();
+      for (const o of incoming) if (o?.id) dedup.set(o.id, o);
+      setOrders(Array.from(dedup.values()));
       setError("");
-    } catch (nextError) {
-      setError(
-        nextError instanceof Error ? nextError.message : "Захиалгуудыг уншихад алдаа гарлаа.",
-      );
-    } finally {
-      setLoading(false);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Алдаа гарлаа");
     }
   }, []);
 
   useEffect(() => {
-    if (!isBrowser || !isDeliverySession(session)) {
-      setLoading(false);
-      return;
-    }
-
+    if (!isBrowser || !isDeliverySession(session)) return;
     void fetchOrders();
-
-    const intervalId = window.setInterval(() => {
-      void fetchOrders();
-    }, 5000);
-
-    const handleVisibilityChange = () => {
-      if (document.visibilityState === "visible") {
-        void fetchOrders();
-      }
-    };
-
-    document.addEventListener("visibilitychange", handleVisibilityChange);
-
-    return () => {
-      window.clearInterval(intervalId);
-      document.removeEventListener("visibilitychange", handleVisibilityChange);
-    };
+    const id = window.setInterval(() => void fetchOrders(), 5000);
+    return () => window.clearInterval(id);
   }, [fetchOrders, isBrowser, session]);
 
-  if (!isBrowser) {
-    return null;
-  }
-
+  if (!isBrowser) return null;
   if (!isDeliverySession(session)) {
     return (
-      <PageShell>
-        <div className="mx-auto mt-24 max-w-md rounded-2xl border border-rose-800 bg-rose-950/40 p-6 text-center">
-          <h1 className="text-xl font-bold text-rose-100">Нэвтрэх эрхгүй байна</h1>
+      <main
+        style={{
+          minHeight: "100vh",
+          background: "var(--bg)",
+          display: "grid",
+          placeItems: "center",
+          padding: 24,
+        }}
+      >
+        <Card>
+          <h1 style={{ margin: 0, fontSize: 22, fontWeight: 800 }}>Нэвтрэх эрхгүй байна</h1>
           <button
-            type="button"
             onClick={() => router.replace("/")}
-            className="mt-4 rounded-xl border border-rose-700 px-4 py-2 text-sm font-semibold text-rose-100 transition hover:bg-rose-900/40"
+            style={{
+              marginTop: 16,
+              background: "var(--text)",
+              color: "var(--bg)",
+              border: "none",
+              borderRadius: 999,
+              padding: "10px 20px",
+              fontSize: 14,
+              fontWeight: 800,
+              cursor: "pointer",
+            }}
           >
             Буцах
           </button>
-        </div>
-      </PageShell>
+        </Card>
+      </main>
     );
   }
 
+  const day = days.find((d) => d.key === selectedKey) ?? days[days.length - 1];
+  const dayOrders = day?.orders ?? [];
+
+  const DELIVERY_UNIT_PRICE = 2500;
+  const itemTotals = MENU_ITEMS.map((m) => ({
+    ...m,
+    total: dayOrders.reduce(
+      (s, o) => s + (o.items.find((x) => x.itemId === m.id)?.qty ?? 0),
+      0,
+    ),
+  }));
+  const totalItems = itemTotals.reduce((s, x) => s + x.total, 0);
+  const totalRevenue = totalItems * DELIVERY_UNIT_PRICE;
+
+  const byClass: Record<
+    string,
+    { total: number; students: OrderRecord[]; itemTotals: Record<string, number> }
+  > = {};
+  for (const o of dayOrders) {
+    const c = o.classNumber ?? "—";
+    if (!byClass[c]) byClass[c] = { total: 0, students: [], itemTotals: {} };
+    byClass[c].students.push(o);
+    byClass[c].total += o.totalCount;
+    for (const it of o.items) {
+      byClass[c].itemTotals[it.itemId] = (byClass[c].itemTotals[it.itemId] ?? 0) + it.qty;
+    }
+  }
+
+  function logout() {
+    clearSession();
+    router.replace("/");
+  }
+
   return (
-    <PageShell
-      title="Хүргэлтийн 7 хоногийн мэдээлэл"
-      subtitle="Сүүлийн 7 хоногийн баталгаажсан захиалгыг өдөр өдрөөр нь харуулна. 7 хоногоос хуучин өгөгдөл автоматаар цэвэрлэгдэнэ."
-    >
-      {error && (
-        <div className="rounded-[1.5rem] border border-rose-500/30 bg-rose-500/10 p-4 text-sm text-rose-100">
-          {error}
-        </div>
-      )}
-
-      <section className="rounded-[2rem] border border-white/10 bg-black/35 p-5 shadow-[0_22px_60px_rgba(0,0,0,0.28)] backdrop-blur-2xl sm:p-6">
-        <div className="flex flex-wrap items-start justify-between gap-4">
-          <div>
-            <p className="text-[11px] font-extrabold uppercase tracking-[0.3em] text-[#43f0c1]">
-              Delivery Calendar
-            </p>
-            <h2 className="mt-3 text-2xl font-bold text-[#f4efe8]">
-              7 хоногийн өдрүүд
-            </h2>
-            <p className="mt-2 text-sm text-[#f4efe8]/64">
-              Өдөр дээр дарж тухайн өдрийн мэдээллийг харна.
-            </p>
+    <main style={{ minHeight: "100vh", background: "var(--bg)" }}>
+      <header
+        style={{
+          padding: "16px clamp(16px, 4vw, 40px)",
+          borderBottom: "1px solid var(--border)",
+          background: "var(--surface)",
+          position: "sticky",
+          top: 0,
+          zIndex: 20,
+        }}
+      >
+        <div
+          style={{
+            maxWidth: 1400,
+            margin: "0 auto",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            gap: 12,
+            flexWrap: "wrap",
+          }}
+        >
+          <div style={{ display: "inline-flex", alignItems: "center", gap: 10 }}>
+            <div
+              style={{
+                width: 32,
+                height: 32,
+                borderRadius: 10,
+                background: "var(--text)",
+                color: "var(--bg)",
+                display: "grid",
+                placeItems: "center",
+                fontWeight: 900,
+                fontSize: 16,
+              }}
+            >
+              P
+            </div>
+            <div>
+              <div style={{ fontSize: 14, fontWeight: 800 }}>Хүргэлтийн самбар</div>
+              <div style={{ fontSize: 12, color: "var(--muted)" }}>{session!.name} · админ</div>
+            </div>
           </div>
+          <button
+            onClick={logout}
+            style={{
+              background: "transparent",
+              border: "1px solid var(--border)",
+              borderRadius: 999,
+              padding: "8px 16px",
+              fontSize: 13,
+              fontWeight: 700,
+              color: "var(--muted)",
+              cursor: "pointer",
+            }}
+          >
+            Гарах
+          </button>
+        </div>
+      </header>
 
-          <div className="rounded-[1.25rem] border border-white/10 bg-white/5 px-4 py-3 text-right">
-            <p className="text-[11px] font-bold uppercase tracking-[0.24em] text-[#f4efe8]/54">
-              7 хоногийн захиалга
-            </p>
-            <p className="mt-2 text-2xl font-black text-[#f4efe8]">{approvedOrders.length}</p>
-          </div>
+      <section style={{ padding: "28px clamp(16px, 4vw, 40px) 80px", maxWidth: 1400, margin: "0 auto" }}>
+        <div style={{ marginBottom: 24 }}>
+          <Eyebrow>Хүргэлтийн календарь</Eyebrow>
+          <h1
+            style={{
+              margin: "8px 0 0",
+              fontSize: "clamp(28px, 4vw, 40px)",
+              fontWeight: 800,
+              letterSpacing: "-0.03em",
+            }}
+          >
+            7 хоногийн захиалгын тойм
+          </h1>
         </div>
 
-        <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-7">
-          {daySummaries.map((day) => {
-            const isActive = day.key === selectedDay?.key;
+        {error && (
+          <div
+            style={{
+              marginBottom: 16,
+              padding: 12,
+              background: "#FBDBD3",
+              border: "1px solid #F1B7AA",
+              borderRadius: 12,
+              fontSize: 13,
+              color: "#8A2E1E",
+              fontWeight: 600,
+            }}
+          >
+            {error}
+          </div>
+        )}
 
+        <div className="day-picker">
+          {days.map((d) => {
+            const active = selectedKey === d.key;
             return (
               <button
-                key={day.key}
-                type="button"
-                onClick={() => setSelectedDayKey(day.key)}
-                className={`rounded-[1.4rem] border px-4 py-4 text-left transition ${
-                  isActive
-                    ? "border-[#43f0c1]/35 bg-[#43f0c1]/12"
-                    : "border-white/10 bg-white/5 hover:border-white/20 hover:bg-white/10"
-                }`}
+                key={d.key}
+                onClick={() => setSelectedKey(d.key)}
+                style={{
+                  padding: "14px 10px",
+                  background: active ? "var(--text)" : "var(--surface)",
+                  color: active ? "var(--bg)" : "var(--text)",
+                  border: `1px solid ${active ? "var(--text)" : "var(--border)"}`,
+                  borderRadius: 18,
+                  cursor: "pointer",
+                  textAlign: "left",
+                  position: "relative",
+                }}
               >
-                <p className="text-[11px] font-extrabold uppercase tracking-[0.24em] text-[#43f0c1]">
-                  {day.dayNumber}-р өдөр
-                </p>
-                <p className="mt-2 text-sm font-semibold text-[#f4efe8]">{day.label}</p>
-                <p className="mt-2 text-xs text-[#f4efe8]/62">{day.totalOrders} захиалга</p>
+                <div
+                  style={{
+                    fontSize: 11,
+                    fontWeight: 800,
+                    letterSpacing: "0.14em",
+                    textTransform: "uppercase",
+                    opacity: 0.7,
+                  }}
+                >
+                  {d.label} {d.isToday && "· өнөөдөр"}
+                </div>
+                <div style={{ fontSize: 26, fontWeight: 800, letterSpacing: "-0.02em", marginTop: 6 }}>
+                  {d.day}
+                </div>
+                <div style={{ fontSize: 12, marginTop: 4, opacity: 0.75 }}>{d.orders.length} захиалга</div>
+                {d.orders.length > 0 && !active && (
+                  <span
+                    style={{
+                      position: "absolute",
+                      top: 12,
+                      right: 12,
+                      width: 8,
+                      height: 8,
+                      borderRadius: 999,
+                      background: "var(--accent)",
+                    }}
+                  />
+                )}
               </button>
             );
           })}
         </div>
-      </section>
 
-      <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-        <article className="rounded-[1.75rem] border border-white/10 bg-black/35 p-5 shadow-[0_22px_60px_rgba(0,0,0,0.28)] backdrop-blur-2xl">
-          <p className="text-[11px] font-extrabold uppercase tracking-[0.3em] text-[#43f0c1]">
-            Total Items
-          </p>
-          <p className="mt-3 text-4xl font-black text-[#f4efe8]">
-            {selectedDay?.totalItems ?? 0}
-          </p>
-          <p className="mt-2 text-sm text-[#f4efe8]/64">
-            {selectedDay ? `${selectedDay.dayNumber}-р өдрийн нийт бүтээгдэхүүн` : "Тухайн өдрийн нийт бүтээгдэхүүн"}
-          </p>
-        </article>
-
-        {DELIVERY_SUMMARY_ITEMS.map((item) => {
-          const total =
-            selectedDay?.itemTotals.find((entry) => entry.id === item.id)?.total ?? 0;
-
-          return (
-            <article
-              key={item.id}
-              className="rounded-[1.75rem] border border-white/10 bg-black/35 p-5 shadow-[0_22px_60px_rgba(0,0,0,0.28)] backdrop-blur-2xl"
-            >
-              <p className="text-[11px] font-extrabold uppercase tracking-[0.3em] text-[#43f0c1]">
-                Item Total
-              </p>
-              <p className="mt-3 text-3xl font-black text-[#f4efe8]">{total}</p>
-              <p className="mt-2 text-sm text-[#f4efe8]/64">{item.name}</p>
-            </article>
-          );
-        })}
-      </section>
-
-      <section className="space-y-5">
-        {loading && approvedOrders.length === 0 ? (
-          <EmptyState title="Уншиж байна..." subtitle="7 хоногийн баталгаажсан захиалгуудыг шинэчилж байна." />
-        ) : !selectedDay ? (
-          <EmptyState title="Өдөр олдсонгүй" subtitle="7 хоногийн өдөр сонгоно уу." />
-        ) : (
-          <section className="rounded-[2rem] border border-white/10 bg-black/35 p-5 shadow-[0_22px_60px_rgba(0,0,0,0.28)] backdrop-blur-2xl sm:p-6">
-            <div className="flex flex-wrap items-start justify-between gap-3">
-              <div>
-                <p className="text-[11px] font-extrabold uppercase tracking-[0.3em] text-[#43f0c1]">
-                  {selectedDay.dayNumber}-р өдөр
-                </p>
-                <h2 className="mt-3 text-2xl font-bold text-[#f4efe8]">
-                  {selectedDay.label}
-                </h2>
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
+            gap: 12,
+            marginBottom: 24,
+          }}
+        >
+          {[
+            { eye: "Нийт ширхэг", big: totalItems, small: "захиалагдсан" },
+            { eye: "Төлөх дүн", big: formatMoney(totalRevenue), small: "өнөөдөр" },
+            { eye: "Сурагчид", big: dayOrders.length, small: "захиалсан" },
+            { eye: "Ангиуд", big: Object.keys(byClass).length, small: "хүргэнэ" },
+          ].map((k, i) => (
+            <Card key={i}>
+              <Eyebrow>{k.eye}</Eyebrow>
+              <div
+                style={{
+                  fontSize: 32,
+                  fontWeight: 800,
+                  letterSpacing: "-0.03em",
+                  marginTop: 10,
+                  lineHeight: 1,
+                }}
+              >
+                {k.big}
               </div>
+              <div style={{ fontSize: 13, color: "var(--muted)", marginTop: 6 }}>{k.small}</div>
+            </Card>
+          ))}
+        </div>
 
-              <div className="flex flex-wrap gap-3">
-                {selectedDay.isToday && (
-                  <div className="rounded-full border border-[#43f0c1]/20 bg-[#43f0c1]/10 px-4 py-2 text-xs font-bold uppercase tracking-[0.24em] text-[#baffef]">
-                    Өнөөдөр
-                  </div>
-                )}
-                <div className="rounded-[1.25rem] border border-white/10 bg-white/5 px-4 py-3 text-right">
-                  <p className="text-[11px] font-bold uppercase tracking-[0.24em] text-[#f4efe8]/54">
-                    Захиалга
-                  </p>
-                  <p className="mt-2 text-2xl font-black text-[#f4efe8]">{selectedDay.totalOrders}</p>
-                </div>
-              </div>
-            </div>
-
-            {selectedDay.orders.length === 0 ? (
-              <div className="mt-5">
-                <EmptyState title="Захиалга алга" subtitle="Энэ өдөр баталгаажсан захиалга бүртгэгдээгүй байна." />
-              </div>
-            ) : (
-              <>
-                <div className="mt-6 space-y-4">
-                  <div>
-                    <p className="text-[11px] font-extrabold uppercase tracking-[0.3em] text-[#43f0c1]">
-                      By Class
-                    </p>
-                    <h3 className="mt-3 text-xl font-bold text-[#f4efe8]">
-                      Тухайн өдрийн анги, сурагчийн задаргаа
-                    </h3>
-                  </div>
-
-                  <div className="space-y-4">
-                    {selectedDay.classSummaries.map((classSummary) => (
-                      <section
-                        key={`${selectedDay.key}-${classSummary.classNumber}`}
-                        className="rounded-[1.75rem] border border-white/10 bg-black/30 p-4 sm:p-5"
+        <div className="del-grid">
+          <Card>
+            <Eyebrow>Бүтээгдэхүүн</Eyebrow>
+            <div style={{ marginTop: 16, display: "grid", gap: 14 }}>
+              {itemTotals.map((it) => {
+                const pct = totalItems ? Math.round((it.total / totalItems) * 100) : 0;
+                return (
+                  <div key={it.id} style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                    <div style={{ width: 40, height: 40, borderRadius: 10, overflow: "hidden", flexShrink: 0 }}>
+                      <FoodImage src={it.image} tone={it.tone} aspect="square" />
+                    </div>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ display: "flex", justifyContent: "space-between" }}>
+                        <span style={{ fontSize: 14, fontWeight: 700 }}>{it.name}</span>
+                        <span style={{ fontSize: 14, fontWeight: 800, fontVariantNumeric: "tabular-nums" }}>
+                          {it.total} ш
+                        </span>
+                      </div>
+                      <div
+                        style={{
+                          marginTop: 6,
+                          height: 6,
+                          background: "var(--surface-2)",
+                          borderRadius: 999,
+                          overflow: "hidden",
+                        }}
                       >
-                        <div className="flex flex-wrap items-start justify-between gap-3">
+                        <div
+                          style={{
+                            height: "100%",
+                            width: `${pct}%`,
+                            background: "var(--accent)",
+                            transition: "width 600ms",
+                          }}
+                        />
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </Card>
+
+          <Card>
+            <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between" }}>
+              <Eyebrow>Ангиар</Eyebrow>
+              <span style={{ fontSize: 12, color: "var(--muted)", fontWeight: 600 }}>
+                Хүргэх дарааллаар
+              </span>
+            </div>
+            <div style={{ marginTop: 16, display: "grid", gap: 10 }}>
+              {Object.keys(byClass)
+                .sort()
+                .map((cls) => (
+                  <details
+                    key={cls}
+                    style={{
+                      background: "var(--surface-2)",
+                      borderRadius: 16,
+                      border: "1px solid var(--border)",
+                      overflow: "hidden",
+                    }}
+                  >
+                    <summary
+                      style={{
+                        padding: "14px 16px",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "space-between",
+                        cursor: "pointer",
+                        listStyle: "none",
+                      }}
+                    >
+                      <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                        <div
+                          style={{
+                            width: 40,
+                            height: 40,
+                            borderRadius: 12,
+                            background: "var(--accent)",
+                            color: "var(--on-accent)",
+                            display: "grid",
+                            placeItems: "center",
+                            fontWeight: 800,
+                            fontSize: 13,
+                          }}
+                        >
+                          {cls}
+                        </div>
+                        <div>
+                          <div style={{ fontSize: 14, fontWeight: 800 }}>Анги {cls}</div>
+                          <div style={{ fontSize: 12, color: "var(--muted)" }}>
+                            {byClass[cls].students.length} сурагч · {byClass[cls].total} ш
+                          </div>
+                        </div>
+                      </div>
+                      <Icon name="chevron-down" size={18} />
+                    </summary>
+                    <div style={{ padding: "0 16px 14px", display: "grid", gap: 8 }}>
+                      {byClass[cls].students.map((o) => (
+                        <div
+                          key={o.id}
+                          style={{
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "space-between",
+                            padding: "10px 12px",
+                            background: "var(--surface)",
+                            borderRadius: 12,
+                            border: "1px solid var(--border)",
+                          }}
+                        >
                           <div>
-                            <p className="text-[11px] font-extrabold uppercase tracking-[0.3em] text-[#43f0c1]">
-                              Class
-                            </p>
-                            <h4 className="mt-3 text-xl font-bold text-[#f4efe8]">
-                              {classSummary.classNumber}
-                            </h4>
-                          </div>
-
-                          <div className="rounded-[1.1rem] border border-white/10 bg-white/5 px-4 py-3 text-right">
-                            <p className="text-[11px] font-bold uppercase tracking-[0.24em] text-[#f4efe8]/54">
-                              Нийт
-                            </p>
-                            <p className="mt-2 text-2xl font-black text-[#baffef]">
-                              {classSummary.totalCount}
-                            </p>
-                          </div>
-                        </div>
-
-                        <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-                          {MENU_ITEMS.map((item) => (
-                            <div
-                              key={item.id}
-                              className="rounded-[1rem] border border-white/10 bg-white/5 px-3 py-2.5"
-                            >
-                              <p className="text-xs text-[#f4efe8]/56">{item.name}</p>
-                              <p className="mt-1 text-lg font-bold text-[#f4efe8]">
-                                {classSummary.itemTotals[item.id] ?? 0}
-                              </p>
+                            <div style={{ fontSize: 13, fontWeight: 700 }}>{o.userName}</div>
+                            <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 2 }}>
+                              {o.items
+                                .map((it) => {
+                                  const m = MENU_ITEMS.find((x) => x.id === it.itemId);
+                                  return `${it.qty}× ${m?.name.split(" ")[0]}`;
+                                })
+                                .join(" · ")}
                             </div>
-                          ))}
+                          </div>
+                          <div style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+                            <span style={{ fontSize: 14, fontWeight: 800 }}>{o.totalCount} ш</span>
+                            <StatusDot tone="approved" label="Төлсөн" />
+                          </div>
                         </div>
-
-                        <div className="mt-4 space-y-3">
-                          {classSummary.students.map((student) => (
-                            <article
-                              key={`${selectedDay.key}-${classSummary.classNumber}-${student.name}`}
-                              className="rounded-[1.25rem] border border-white/10 bg-white/5 p-4"
-                            >
-                              <div className="flex flex-wrap items-center justify-between gap-3">
-                                <div>
-                                  <p className="text-lg font-semibold text-[#f4efe8]">
-                                    {student.name}
-                                  </p>
-                                  <p className="mt-1 text-sm text-[#f4efe8]/58">
-                                    Нийт авсан: {student.totalCount} ш
-                                  </p>
-                                </div>
-
-                                <div className="rounded-full border border-white/10 bg-black/30 px-3 py-1 text-xs font-semibold text-[#f4efe8]/72">
-                                  {classSummary.classNumber}
-                                </div>
-                              </div>
-
-                              <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-                                {MENU_ITEMS.map((item) => (
-                                  <div
-                                    key={item.id}
-                                    className="rounded-[1rem] border border-white/10 bg-black/30 px-3 py-2.5"
-                                  >
-                                    <p className="text-xs text-[#f4efe8]/56">{item.name}</p>
-                                    <p className="mt-1 text-lg font-bold text-[#baffef]">
-                                      {student.itemTotals[item.id] ?? 0}
-                                    </p>
-                                  </div>
-                                ))}
-                              </div>
-                            </article>
-                          ))}
-                        </div>
-                      </section>
-                    ))}
-                  </div>
+                      ))}
+                    </div>
+                  </details>
+                ))}
+              {Object.keys(byClass).length === 0 && (
+                <div style={{ padding: 40, textAlign: "center", color: "var(--muted)" }}>
+                  Энэ өдөрт захиалга байхгүй байна
                 </div>
-
-                <div className="mt-6 space-y-4">
-                  <div>
-                    <p className="text-[11px] font-extrabold uppercase tracking-[0.3em] text-[#43f0c1]">
-                      Orders
-                    </p>
-                    <h3 className="mt-3 text-xl font-bold text-[#f4efe8]">
-                      Тухайн өдрийн баталгаажсан захиалгууд
-                    </h3>
-                  </div>
-
-                  <div className="grid gap-4">
-                    {selectedDay.orders.map((order) => (
-                      <OrderCard key={order.id} order={order} />
-                    ))}
-                  </div>
-                </div>
-              </>
-            )}
-          </section>
-        )}
+              )}
+            </div>
+          </Card>
+        </div>
       </section>
-    </PageShell>
+
+      <style>{`
+        .day-picker {
+          display: grid;
+          grid-template-columns: repeat(7, 1fr);
+          gap: 8px;
+          margin-bottom: 24px;
+        }
+        .del-grid {
+          display: grid;
+          grid-template-columns: 1fr 1.5fr;
+          gap: 16px;
+        }
+        @media (max-width: 900px) {
+          .del-grid { grid-template-columns: 1fr; }
+        }
+        @media (max-width: 600px) {
+          .day-picker { grid-template-columns: repeat(auto-fit, minmax(90px, 1fr)); }
+        }
+      `}</style>
+    </main>
   );
 }

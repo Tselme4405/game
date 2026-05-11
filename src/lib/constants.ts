@@ -8,9 +8,36 @@ export const STORAGE_KEYS = {
 } as const;
 
 export const MENU_ITEMS: MenuItem[] = [
-  { id: "mahtai_piroshki", name: "Махтай пирошки", subtitle: "Сонгоод тоо оруулна", price: 3500 },
-  { id: "tomstoi_piroshki", name: "Төмстэй пирошки", subtitle: "Сонгоод тоо оруулна", price: 3500 },
-  { id: "mantuun_buuz", name: "Мантуун бууз", subtitle: "Сонгоод тоо оруулна", price: 3500 },
+  {
+    id: "mahtai_piroshki",
+    name: "Махтай пирошки",
+    subtitle: "Шүүслэг үхрийн мах, халуухан шарсан",
+    price: 3500,
+    kcal: 320,
+    tag: "Хамгийн их авдаг",
+    tone: "warm",
+    image: "/img/mahtai_piroshki.jpg",
+  },
+  {
+    id: "tomstoi_piroshki",
+    name: "Төмстэй пирошки",
+    subtitle: "Зөөлөн төмс, цагаан лууван, бяслаг",
+    price: 3500,
+    kcal: 280,
+    tag: "Цагаан хоолтнуудад",
+    tone: "warm",
+    image: "/img/tomstoi_piroshki.jpg",
+  },
+  {
+    id: "mantuun_buuz",
+    name: "Мантуун бууз",
+    subtitle: "Уурандаа жигнэсэн зөөлөн гадартай",
+    price: 3500,
+    kcal: 300,
+    tag: "Шинэ",
+    tone: "neutral",
+    image: "/img/mantuun_buuz.jpg",
+  },
 ];
 
 export const CLASS_OPTIONS = [
@@ -33,6 +60,6 @@ export const STATUS_LABELS: Record<PaymentStatus, string> = {
 };
 
 export const DELIVERY_ACCESS = {
-  classNumber: "333",
+  classNumber: "302",
   names: ["Hurgelt hun", "HurgeltiinHun"],
 } as const;
